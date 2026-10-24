@@ -43,7 +43,39 @@ const ui = {
   pauseSfxToggle: document.getElementById('pauseSfxToggle'),
   settingsBtn: document.getElementById('settingsBtn'),
   exitBtn: document.getElementById('exitBtn'),
-  exitInfo: document.getElementById('exitInfo')
+  exitInfo: document.getElementById('exitInfo'),
+  startLoading: document.getElementById('startLoading'),
+  startLoadingFill: document.getElementById('startLoadingFill'),
+  profileModal: document.getElementById('profileModal'),
+  profileCloseBtn: document.getElementById('profileCloseBtn'),
+  avatarImage: document.getElementById('avatarImage'),
+  avatarUploadBtn: document.getElementById('avatarUploadBtn'),
+  avatarPresets: document.getElementById('avatarPresets'),
+  avatarFileInput: document.getElementById('avatarFileInput'),
+  profileMasterVolume: document.getElementById('profileMasterVolume'),
+  profileMasterVolumeText: document.getElementById('profileMasterVolumeText'),
+  profileSfxVolume: document.getElementById('profileSfxVolume'),
+  profileSfxVolumeText: document.getElementById('profileSfxVolumeText'),
+  profileMusicVolume: document.getElementById('profileMusicVolume'),
+  profileMusicVolumeText: document.getElementById('profileMusicVolumeText'),
+  profileShakeVolume: document.getElementById('profileShakeVolume'),
+  profileShakeVolumeText: document.getElementById('profileShakeVolumeText'),
+  avatarBtn: document.getElementById('avatarBtn'),
+  avatarBtnImage: document.getElementById('avatarBtnImage'),
+  levelSelect: document.getElementById('levelSelect'),
+  nightLevels: document.getElementById('nightLevels'),
+  dayLevels: document.getElementById('dayLevels'),
+  shopBtn: document.getElementById('shopBtn'),
+  upgradeBtn: document.getElementById('upgradeBtn'),
+  inventoryBtn: document.getElementById('inventoryBtn'),
+  extrasBtn: document.getElementById('extrasBtn'),
+  comingSoon: document.getElementById('comingSoon'),
+  levelComplete: document.getElementById('levelComplete'),
+  levelScore: document.getElementById('levelScore'),
+  levelWaves: document.getElementById('levelWaves'),
+  levelKills: document.getElementById('levelKills'),
+  nextLevelBtn: document.getElementById('nextLevelBtn'),
+  levelLobbyBtn: document.getElementById('levelLobbyBtn')
 };
 
 const sprites = {
@@ -111,30 +143,31 @@ const weapons = {
     desc: '快速劈砍'
   },
   gun: {
-    name: '手枪', kind: 'gun', short: '枪', color: '#9fb4d8', cooldown: .16, damage: 32, bulletSpeed: 1150, spread: .045, knock: 150, ammoUse: 1, starter: true,
+    name: '手枪', kind: 'gun', short: '枪', color: '#9fb4d8', cooldown: .16, damage: 32, bulletSpeed: 1150, spread: .045, knock: 150, ammoUse: 1, starter: true, shake: 2.0,
     desc: '远程点射'
   },
   smg: {
-    name: '冲锋枪', kind: 'gun', short: '冲', color: '#7ee081', cooldown: .075, damage: 17, bulletSpeed: 1350, spread: .085, knock: 72, ammoUse: 1, pellets: 1, pickupAmmo: 128, disposable: true,
+    name: '冲锋枪', kind: 'gun', short: '冲', color: '#7ee081', cooldown: .075, damage: 17, bulletSpeed: 1350, spread: .085, knock: 72, ammoUse: 1, pellets: 1, pickupAmmo: 128, disposable: true, shake: .35,
     desc: '自动连射'
   },
   shotgun: {
-    name: '霰弹枪', kind: 'gun', short: '散', color: '#ff9d5a', cooldown: .58, damage: 22, bulletSpeed: 980, spread: .24, knock: 260, ammoUse: 1, pellets: 6, pickupAmmo: 28, disposable: true,
+    name: '霰弹枪', kind: 'gun', short: '散', color: '#ff9d5a', cooldown: .58, damage: 22, bulletSpeed: 980, spread: .24, knock: 260, ammoUse: 1, pellets: 6, pickupAmmo: 28, disposable: true, shake: 4.6,
     desc: '近距爆发'
   },
   rifle: {
-    name: '步枪', kind: 'gun', short: '狙', color: '#62a8ff', cooldown: .94, damage: 112, bulletSpeed: 1750, spread: .015, knock: 430, ammoUse: 1, pellets: 1, pickupAmmo: 18, disposable: true,
+    name: '步枪', kind: 'gun', short: '狙', color: '#62a8ff', cooldown: .94, damage: 112, bulletSpeed: 1750, spread: .015, knock: 430, ammoUse: 1, pellets: 1, pickupAmmo: 18, disposable: true, shake: 6.0,
     desc: '高伤单发'
   }
 };
 
 const settings = (() => {
-  const base = { master: .9, music: .95, sfx: .9 };
+  const base = { master: .9, music: .95, sfx: .9, shake: .8 };
   try {
     const saved = JSON.parse(localStorage.getItem('zombie-settings') || '{}');
     if (typeof saved.master === 'number') base.master = clamp(saved.master, 0, 1);
     if (typeof saved.music === 'number') base.music = clamp(saved.music, 0, 1);
     if (typeof saved.sfx === 'number') base.sfx = clamp(saved.sfx, 0, 1);
+    if (typeof saved.shake === 'number') base.shake = clamp(saved.shake, 0, 1);
   } catch (err) { /* localStorage 不可用时使用默认值 */ }
   return base;
 })();
@@ -142,7 +175,63 @@ function saveSettings() {
   try { localStorage.setItem('zombie-settings', JSON.stringify(settings)); } catch (err) { /* 忽略隐私模式错误 */ }
 }
 
+const levels = [
+  { id: 1, name: '第一关 · 街口', theme: 'night', totalWaves: 3, air: false, crates: false, desc: '纯地面僵尸 · 默认武器' },
+  { id: 2, name: '第二关 · 巷战', theme: 'night', totalWaves: 5, air: false, crates: true, desc: '解锁补给箱' },
+  { id: 3, name: '第三关 · 夜空威胁', theme: 'night', totalWaves: 7, air: true, crates: true, desc: '出现空中单位' },
+  { id: 4, name: '第四关 · 白昼', theme: 'day', totalWaves: 5, air: false, crates: true, desc: '白天地图' },
+  { id: 5, name: '第五关 · 烈日补给', theme: 'day', totalWaves: 6, air: true, crates: true, desc: '白天 + 空中单位' },
+  { id: 6, name: '第六关 · 白日尸潮', theme: 'day', totalWaves: 8, air: true, crates: true, desc: '高难白昼战' }
+];
+
+function loadUnlocked() {
+  try {
+    const value = Number(localStorage.getItem('zombie-unlocked'));
+    if (Number.isFinite(value) && value >= 1) return clamp(value, 1, levels.length);
+  } catch (err) { /* 忽略存储错误 */ }
+  return 1;
+}
+
+let unlockedLevel = loadUnlocked();
+let currentLevel = levels[0];
+let levelConfig = levels[0];
+
+const avatarPresets = ['#2878d1', '#ff8a3d', '#7ee081', '#b57bd6', '#ffd166', '#ff5a5a'];
+let avatarValue = (() => {
+  try { return localStorage.getItem('zombie-avatar') || avatarPresets[0]; } catch (err) { return avatarPresets[0]; }
+})();
+
+function applyAvatar() {
+  const value = avatarValue;
+  [ui.avatarImage, ui.avatarBtnImage].forEach(el => {
+    if (!el) return;
+    el.style.background = value.startsWith('data:') ? `url(${value}) center/cover no-repeat` : value;
+  });
+}
+function saveAvatar() {
+  try { localStorage.setItem('zombie-avatar', avatarValue); } catch (err) { /* 头像过大或私有模式时忽略 */ }
+}
+function renderAvatarPresets() {
+  ui.avatarPresets.innerHTML = '';
+  avatarPresets.forEach(color => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.background = color;
+    btn.title = '选择内置头像';
+    btn.addEventListener('click', () => { avatarValue = color; saveAvatar(); applyAvatar(); });
+    ui.avatarPresets.appendChild(btn);
+  });
+}
+function openProfile() {
+  syncSettingsUI();
+  ui.profileModal.classList.remove('hidden');
+}
+function closeProfile() {
+  ui.profileModal.classList.add('hidden');
+}
+
 let state = 'menu';
+let startLoadingTimer = null;
 let cam = { x: 0, y: 0 };
 let shake = 0;
 let player, enemies, bullets, pickups, particles, texts, crates;
@@ -163,7 +252,9 @@ const touchFire = { active: false, id: -1 };
 
 if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 820px)').matches) document.body.classList.add('touch');
 
-function resetGame() {
+function resetGame(config = currentLevel || levels[0]) {
+  levelConfig = levels.find(l => l.id === config.id) || levels[0];
+  currentLevel = levelConfig;
   player = {
     x: worldWidth * .5, y: 392, r: 20, hp: 100, maxHp: 100, speed: 236,
     weapon: 'gun', inventory: defaultInventory.slice(), ammoByWeapon: { gun: 72 },
@@ -186,8 +277,8 @@ function resetGame() {
   waveBannerAt = 0;
   bossRef = null;
   shake = 0;
-  theme = 'night';
-  spawnCrates(8);
+  theme = levelConfig.theme;
+  spawnCrates(levelConfig.crates ? 8 : 0);
   if (ui.exitInfo) ui.exitInfo.classList.add('hidden');
   cam.x = clamp(player.x - W * .5, 0, worldWidth - W);
   cam.y = cameraYTarget();
@@ -195,6 +286,9 @@ function resetGame() {
   ui.menu.classList.add('hidden');
   ui.dead.classList.add('hidden');
   ui.pause.classList.add('hidden');
+  ui.levelSelect.classList.add('hidden');
+  ui.levelComplete.classList.add('hidden');
+  ui.profileModal.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
   ui.hud.classList.remove('hidden');
   updateHud();
@@ -216,25 +310,26 @@ function cameraYTarget() {
 
 function startWave(n) {
   wave = n;
-  theme = n > 0 && (n % 6) >= 3 ? 'day' : 'night';
-  ui.bannerText.textContent = (wave % 5 === 0) ? `第 ${wave} 波 · BOSS 来袭` : (theme === 'day' ? `第 ${wave} 波 · 白天` : `第 ${wave} 波`);
+  theme = levelConfig.theme;
+  const isLast = wave >= levelConfig.totalWaves;
+  ui.bannerText.textContent = isLast ? `最终波 · 第 ${wave} 波` : (wave % 5 === 0 ? `第 ${wave} 波 · BOSS 来袭` : (theme === 'day' ? `第 ${wave} 波 · 白天` : `第 ${wave} 波`));
   ui.banner.classList.remove('hidden');
   waveBannerAt = 1.8;
   spawnQueue = [];
-  const isBoss = wave % 5 === 0;
-  const total = clamp(4 + Math.floor(wave * 2.2), 5, 28);
+  const isBoss = wave % 5 === 0 && wave < levelConfig.totalWaves;
+  const total = clamp(3 + Math.floor(wave * 1.5), 4, 20);
   for (let i = 0; i < total; i++) {
     const r = Math.random();
     if (wave < 2) spawnQueue.push('walker');
     else if (r < .44) spawnQueue.push('walker');
     else if (r < .70) spawnQueue.push('runner');
-    else if (r < .86) spawnQueue.push('brute');
+    else if (r < .86 || !levelConfig.air) spawnQueue.push('brute');
     else spawnQueue.push('spitter');
   }
   if (isBoss) {
     spawnQueue.push('boss');
     for (let i = 0; i < Math.min(6, 2 + Math.floor(wave / 5)); i++) spawnQueue.push(Math.random() < .6 ? 'runner' : 'walker');
-    if (wave >= 8) spawnQueue.push('spitter');
+    if (wave >= 8 && levelConfig.air) spawnQueue.push('spitter');
   }
   for (let i = spawnQueue.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -245,6 +340,66 @@ function startWave(n) {
   audio.wave();
   music.setMode(isBoss ? 'boss' : (theme === 'day' ? 'day' : 'battle'), true);
   updateHud();
+}
+
+function completeLevel() {
+  if (state === 'levelcomplete') return;
+  state = 'levelcomplete';
+  const next = levels.find(l => l.id === currentLevel.id + 1);
+  unlockedLevel = Math.max(unlockedLevel, next ? next.id : levels.length);
+  try { localStorage.setItem('zombie-unlocked', String(unlockedLevel)); } catch (err) { /* 忽略存储错误 */ }
+  renderLevelList();
+  audio.bossDown();
+  music.setMode('menu');
+  music.stop(.55);
+  ui.levelScore.textContent = score;
+  ui.levelWaves.textContent = Math.max(1, wave);
+  ui.levelKills.textContent = kills;
+  if (next) ui.nextLevelBtn.textContent = `下一关 · ${next.name.split(' · ')[0]}`;
+  else ui.nextLevelBtn.textContent = '已是最后一关';
+  setTimeout(() => {
+    ui.hud.classList.add('hidden');
+    ui.levelComplete.classList.remove('hidden');
+  }, 520);
+}
+
+function enterLobby() {
+  if (startLoadingTimer) { clearInterval(startLoadingTimer); startLoadingTimer = null; }
+  state = 'menu';
+  music.stop(.25);
+  if (actx && musicEnabled) music.setMode('menu', true);
+  renderLevelList();
+  ui.menu.classList.add('hidden');
+  ui.dead.classList.add('hidden');
+  ui.pause.classList.add('hidden');
+  ui.levelComplete.classList.add('hidden');
+  ui.profileModal.classList.add('hidden');
+  ui.bossHud.classList.add('hidden');
+  ui.hud.classList.add('hidden');
+  ui.levelSelect.classList.remove('hidden');
+}
+
+function renderLevelList() {
+  const groups = { night: ui.nightLevels, day: ui.dayLevels };
+  groups.night.innerHTML = '';
+  groups.day.innerHTML = '';
+  levels.forEach(level => {
+    const locked = level.id > unlockedLevel;
+    const completed = level.id < unlockedLevel;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `level-card${locked ? ' locked' : ''}`;
+    btn.disabled = locked;
+    btn.innerHTML = `<span><b>${level.id}. ${level.name}</b><span>${level.desc}</span></span><span class="lock">${locked ? '🔒' : completed ? '已通关' : level === currentLevel ? '当前' : '可挑战'}</span>`;
+    btn.addEventListener('click', () => startLevel(level));
+    groups[level.theme].appendChild(btn);
+  });
+}
+
+function startLevel(level) {
+  if (state === 'playing' && level === currentLevel) return;
+  currentLevel = level;
+  resetGame(level);
 }
 
 function spawnOne(type) {
@@ -423,7 +578,7 @@ function tryAttack() {
     if (player.weapon === 'gun') player.ammo = player.ammoByWeapon.gun;
     player.flash = .06;
     player.recoil = 1;
-    addShake(w.pellets > 1 ? 4.6 : 2.4);
+    addShake(w.shake || 2.0);
     audio.bang(w.pellets > 1 ? 'shotgun' : w.name === '步枪' ? 'rifle' : 'gun');
     const shots = w.pellets || 1;
     const mx = player.x + Math.cos(aim) * 24;
@@ -477,7 +632,15 @@ function killZombie(z, aim) {
     if (r < .10) spawnPickup(z.x, z.y, 'health');
     else if (r < .25) spawnPickup(z.x, z.y, 'ammo');
   }
-  decals.push({ x: z.x, y: z.y, r: clamp(z.r * 1.15, 12, 52), alpha: .55 });
+  if (z.flying) {
+    for (let i = 0; i < 28; i++) {
+      const a = rand(-Math.PI * .9, Math.PI * .1), sp = rand(70, 300);
+      particles.push({ x: z.x + rand(-10, 10), y: z.y - z.r * .65, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp + 80, life: rand(.3, .8), max: .8, r: rand(2.2, 4.6), color: Math.random() < .8 ? '#b92e2e' : '#7a1d1d', g: 720 });
+    }
+    decals.push({ x: clamp(z.x, 60, worldWidth - 60), y: laneBottom - rand(0, 24), r: clamp(z.r * .75, 10, 34), alpha: .55 });
+  } else {
+    decals.push({ x: z.x, y: z.y, r: clamp(z.r * 1.15, 12, 52), alpha: .55 });
+  }
   if (decals.length > 46) decals.shift();
   updateHud();
 }
@@ -486,7 +649,7 @@ function spawnPickup(x, y, kind) {
   pickups.push({ kind, x: clamp(x, 60, worldWidth - 60), y: clamp(y, laneTop + 10, laneBottom - 8), bob: rand(0, 10), life: 16 });
 }
 
-function addShake(v) { shake = Math.min(24, shake + v); }
+function addShake(v) { shake = Math.min(24, shake + v * clamp(settings.shake ?? 1, 0, 1)); }
 
 function currentAim() {
   if (mouse.active || touchFire.active) {
@@ -538,7 +701,13 @@ function update(dt) {
 
   if (nextWaveTimer > 0) {
     nextWaveTimer -= dt;
-    if (nextWaveTimer <= 0) startWave(wave + 1);
+    if (nextWaveTimer <= 0) {
+      if (wave >= levelConfig.totalWaves) {
+        completeLevel();
+        return;
+      }
+      startWave(wave + 1);
+    }
   }
   if (waveBannerAt > 0) {
     waveBannerAt -= dt;
@@ -551,7 +720,7 @@ function update(dt) {
       spawnOne(spawnQueue.shift());
       spawnTimer = .42 + Math.random() * .5 - Math.min(.28, wave * .012);
     }
-  } else if (!enemies.length && nextWaveTimer <= 0) {
+  } else if (!enemies.length && nextWaveTimer <= 0 && wave < levelConfig.totalWaves) {
     nextWaveTimer = 3.4;
     if (wave > 0) {
       score += 50 + wave * 20;
@@ -1693,11 +1862,10 @@ addEventListener('keyup', e => {
   if (e.code === 'Space' || e.code === 'KeyJ') input.attack = false;
 });
 
-document.getElementById('startBtn').addEventListener('click', () => { audio.ctx(); resetGame(); });
-document.getElementById('restartBtn').addEventListener('click', resetGame);
+document.getElementById('startBtn').addEventListener('click', beginStartGame);
+document.getElementById('restartBtn').addEventListener('click', () => resetGame(currentLevel));
 document.getElementById('resumeBtn').addEventListener('click', togglePause);
-document.getElementById('menuBtn').addEventListener('click', showMenu);
-document.getElementById('switchBtn').addEventListener('click', switchWeapon);
+document.getElementById('menuBtn').addEventListener('click', enterLobby);
 ui.settingsBtn.addEventListener('click', resetSettings);
 ui.exitBtn.addEventListener('click', exitGame);
 ui.masterVolume.addEventListener('input', () => applySettingChange('master', Number(ui.masterVolume.value)));
@@ -1705,6 +1873,59 @@ ui.musicVolume.addEventListener('input', () => applySettingChange('music', Numbe
 ui.sfxVolume.addEventListener('input', () => applySettingChange('sfx', Number(ui.sfxVolume.value)));
 ui.pauseMusicToggle.addEventListener('change', () => { if (ui.pauseMusicToggle.checked !== musicEnabled) toggleMusic(); });
 ui.pauseSfxToggle.addEventListener('change', () => { if (ui.pauseSfxToggle.checked !== !muted) toggleMute(); });
+ui.profileMasterVolume.addEventListener('input', () => applySettingChange('master', Number(ui.profileMasterVolume.value)));
+ui.profileSfxVolume.addEventListener('input', () => applySettingChange('sfx', Number(ui.profileSfxVolume.value)));
+ui.profileMusicVolume.addEventListener('input', () => applySettingChange('music', Number(ui.profileMusicVolume.value)));
+ui.profileShakeVolume.addEventListener('input', () => applySettingChange('shake', Number(ui.profileShakeVolume.value)));
+ui.profileCloseBtn.addEventListener('click', closeProfile);
+ui.avatarBtn.addEventListener('click', openProfile);
+ui.avatarImage.addEventListener('click', () => ui.avatarFileInput.click());
+ui.avatarUploadBtn.addEventListener('click', () => ui.avatarFileInput.click());
+ui.avatarFileInput.addEventListener('change', e => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.addEventListener('load', () => {
+    avatarValue = String(reader.result || '');
+    saveAvatar();
+    applyAvatar();
+  });
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+ui.nextLevelBtn.addEventListener('click', () => {
+  const next = levels.find(l => l.id === currentLevel.id + 1);
+  if (next && next.id <= unlockedLevel) startLevel(next);
+  else enterLobby();
+});
+ui.levelLobbyBtn.addEventListener('click', enterLobby);
+ui.shopBtn.addEventListener('click', () => showComingSoon('商店'));
+ui.upgradeBtn.addEventListener('click', () => showComingSoon('升级'));
+ui.inventoryBtn.addEventListener('click', () => showComingSoon('背包'));
+
+function beginStartGame() {
+  if (startLoadingTimer) return;
+  audio.ctx();
+  ui.startLoading.classList.remove('hidden');
+  ui.startLoadingFill.style.width = '0%';
+  let progress = 0;
+  startLoadingTimer = setInterval(() => {
+    progress += 11 + Math.random() * 10;
+    ui.startLoadingFill.style.width = `${clamp(progress, 0, 100)}%`;
+    if (progress >= 100) {
+      clearInterval(startLoadingTimer);
+      startLoadingTimer = null;
+      enterLobby();
+    }
+  }, 90);
+}
+
+function showComingSoon(name) {
+  ui.comingSoon.textContent = `${name}即将开放`;
+  ui.comingSoon.classList.remove('hidden');
+  clearTimeout(showComingSoon.timer);
+  showComingSoon.timer = setTimeout(() => ui.comingSoon.classList.add('hidden'), 1500);
+}
 
 function syncSettingsUI() {
   ui.masterVolume.value = Math.round(settings.master * 100);
@@ -1713,6 +1934,14 @@ function syncSettingsUI() {
   ui.musicVolumeText.textContent = `${Math.round(settings.music * 100)}%`;
   ui.sfxVolume.value = Math.round(settings.sfx * 100);
   ui.sfxVolumeText.textContent = `${Math.round(settings.sfx * 100)}%`;
+  ui.profileMasterVolume.value = Math.round(settings.master * 100);
+  ui.profileMasterVolumeText.textContent = `${Math.round(settings.master * 100)}%`;
+  ui.profileSfxVolume.value = Math.round(settings.sfx * 100);
+  ui.profileSfxVolumeText.textContent = `${Math.round(settings.sfx * 100)}%`;
+  ui.profileMusicVolume.value = Math.round(settings.music * 100);
+  ui.profileMusicVolumeText.textContent = `${Math.round(settings.music * 100)}%`;
+  ui.profileShakeVolume.value = Math.round((settings.shake ?? 1) * 100);
+  ui.profileShakeVolumeText.textContent = `${Math.round((settings.shake ?? 1) * 100)}%`;
   ui.pauseMusicToggle.checked = musicEnabled;
   ui.pauseSfxToggle.checked = !muted;
 }
@@ -1728,6 +1957,7 @@ function resetSettings() {
   settings.master = .9;
   settings.music = .95;
   settings.sfx = .9;
+  settings.shake = .8;
   saveSettings();
   syncSettingsUI();
   music.apply(.15);
@@ -1807,10 +2037,16 @@ function showMenu() {
   ui.menu.classList.remove('hidden');
   ui.pause.classList.add('hidden');
   ui.dead.classList.add('hidden');
+  ui.levelSelect.classList.add('hidden');
+  ui.levelComplete.classList.add('hidden');
+  ui.profileModal.classList.add('hidden');
   ui.hud.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
 }
 
+renderAvatarPresets();
+applyAvatar();
+renderLevelList();
 syncSettingsUI();
 resetGame();
 showMenu();
