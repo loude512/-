@@ -28,8 +28,7 @@ const ui = {
   finalScore: document.getElementById('finalScore'),
   finalWave: document.getElementById('finalWave'),
   finalKills: document.getElementById('finalKills'),
-  stickBall: document.getElementById('stickBall'),
-  fireBtn: document.getElementById('fireBtn'),
+  stickKnob: document.getElementById('stickKnob'),
   swapBtn: document.getElementById('swapBtn'),
   touchPauseBtn: document.getElementById('touchPauseBtn'),
   touchMuteBtn: document.getElementById('touchMuteBtn'),
@@ -1247,15 +1246,19 @@ canvas.addEventListener('pointerdown', e => {
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
-    if (px < rect.width * .52 && py > rect.height * .22) {
-      stick.active = true; stick.id = e.pointerId; stick.ox = px; stick.oy = py; stick.x = 0; stick.y = 0;
-      ui.stickBall.style.left = `${px - 56}px`;
-      ui.stickBall.style.top = `${py - 56}px`;
-      ui.stickBall.style.bottom = 'auto';
-      ui.stickBall.style.setProperty('--sx', '0px');
-      ui.stickBall.style.setProperty('--sy', '0px');
-    } else {
-      touchFire.active = true; touchFire.id = e.pointerId;
+    const isLeftSide = px < rect.width * .52 && py > rect.height * .22;
+    if (!stick.active && isLeftSide) {
+      stick.active = true;
+      stick.id = e.pointerId;
+      stick.ox = 70;
+      stick.oy = rect.height - 74;
+      stick.x = 0;
+      stick.y = 0;
+      ui.stickKnob.style.setProperty('--sx', '0px');
+      ui.stickKnob.style.setProperty('--sy', '0px');
+    } else if (!touchFire.active) {
+      touchFire.active = true;
+      touchFire.id = e.pointerId;
       setMouseFromEvent(e);
     }
     e.preventDefault();
@@ -1265,9 +1268,20 @@ canvas.addEventListener('pointerdown', e => {
   input.attack = true;
 });
 canvas.addEventListener('pointerup', e => {
-  if (e.pointerId === stick.id) { stick.active = false; stick.id = -1; stick.x = 0; stick.y = 0; }
+  if (e.pointerId === stick.id) {
+    stick.active = false;
+    stick.id = -1;
+    stick.x = 0;
+    stick.y = 0;
+    ui.stickKnob.style.setProperty('--sx', '0px');
+    ui.stickKnob.style.setProperty('--sy', '0px');
+  }
   if (e.pointerId === touchFire.id) { touchFire.active = false; touchFire.id = -1; }
   if (e.pointerType !== 'touch') input.attack = false;
+});
+canvas.addEventListener('pointercancel', e => {
+  if (e.pointerId === stick.id) { stick.active = false; stick.id = -1; stick.x = 0; stick.y = 0; }
+  if (e.pointerId === touchFire.id) { touchFire.active = false; touchFire.id = -1; }
 });
 canvas.addEventListener('pointerleave', () => { input.attack = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -1282,22 +1296,10 @@ function updateStick(e) {
   if (len > 1) { dx /= len; dy /= len; }
   stick.x = Math.abs(dx) < .18 ? 0 : dx;
   stick.y = Math.abs(dy) < .18 ? 0 : dy;
-  ui.stickBall.style.setProperty('--sx', `${dx * 42}px`);
-  ui.stickBall.style.setProperty('--sy', `${dy * 42}px`);
+  ui.stickKnob.style.setProperty('--sx', `${dx * 42}px`);
+  ui.stickKnob.style.setProperty('--sy', `${dy * 42}px`);
 }
 
-ui.fireBtn.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  audio.ctx();
-  if (state !== 'playing') return;
-  touchFire.active = true;
-  touchFire.id = -999;
-  if (!mouse.active) aimTouchFire();
-  if (e.pointerId !== undefined && typeof ui.fireBtn.setPointerCapture === 'function') {
-    try { ui.fireBtn.setPointerCapture(e.pointerId); } catch (err) { /* old browser */ }
-  }
-});
-ui.fireBtn.addEventListener('pointerup', () => { touchFire.active = false; });
 ui.swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); switchWeapon(); });
 ui.touchPauseBtn.addEventListener('pointerdown', e => { e.preventDefault(); togglePause(); });
 ui.touchMuteBtn.addEventListener('pointerdown', e => { e.preventDefault(); toggleMute(); });
