@@ -69,6 +69,20 @@ const ui = {
   upgradeBtn: document.getElementById('upgradeBtn'),
   inventoryBtn: document.getElementById('inventoryBtn'),
   extrasBtn: document.getElementById('extrasBtn'),
+  levelListBtn: document.getElementById('levelListBtn'),
+  levelListModal: document.getElementById('levelListModal'),
+  levelListCloseBtn: document.getElementById('levelListCloseBtn'),
+  playerName: document.getElementById('playerName'),
+  playerLevel: document.getElementById('playerLevel'),
+  diamondCount: document.getElementById('diamondCount'),
+  goldCount: document.getElementById('goldCount'),
+  prevLevelArrow: document.getElementById('prevLevelArrow'),
+  nextLevelArrow: document.getElementById('nextLevelArrow'),
+  prevLevelCard: document.getElementById('prevLevelCard'),
+  currentLevelCard: document.getElementById('currentLevelCard'),
+  nextLevelCard: document.getElementById('nextLevelCard'),
+  startLevelBtn: document.getElementById('startLevelBtn'),
+  playerNameInput: document.getElementById('playerNameInput'),
   comingSoon: document.getElementById('comingSoon'),
   levelComplete: document.getElementById('levelComplete'),
   levelScore: document.getElementById('levelScore'),
@@ -195,6 +209,29 @@ function loadUnlocked() {
 let unlockedLevel = loadUnlocked();
 let currentLevel = levels[0];
 let levelConfig = levels[0];
+let selectedLevelIndex = 0;
+
+const playerProfile = (() => {
+  const base = { name: '玩家', level: 1, diamonds: 0, gold: 0 };
+  try {
+    const saved = JSON.parse(localStorage.getItem('zombie-profile') || '{}');
+    if (typeof saved.name === 'string') base.name = saved.name.slice(0, 10);
+    if (typeof saved.level === 'number') base.level = Math.max(1, saved.level);
+    if (typeof saved.diamonds === 'number') base.diamonds = Math.max(0, saved.diamonds);
+    if (typeof saved.gold === 'number') base.gold = Math.max(0, saved.gold);
+  } catch (err) { /* 忽略存储错误 */ }
+  return base;
+})();
+function saveProfile() {
+  try { localStorage.setItem('zombie-profile', JSON.stringify(playerProfile)); } catch (err) { /* 忽略隐私模式错误 */ }
+}
+function updateLobbyStats() {
+  ui.playerName.textContent = playerProfile.name || '玩家';
+  ui.playerLevel.textContent = `LV ${Math.max(1, playerProfile.level)}`;
+  ui.diamondCount.textContent = playerProfile.diamonds;
+  ui.goldCount.textContent = playerProfile.gold;
+  ui.playerNameInput.value = playerProfile.name || '玩家';
+}
 
 const avatarPresets = ['#2878d1', '#ff8a3d', '#7ee081', '#b57bd6', '#ffd166', '#ff5a5a'];
 let avatarValue = (() => {
@@ -287,6 +324,7 @@ function resetGame(config = currentLevel || levels[0]) {
   ui.dead.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.levelSelect.classList.add('hidden');
+  ui.levelListModal.classList.add('hidden');
   ui.levelComplete.classList.add('hidden');
   ui.profileModal.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
@@ -348,7 +386,15 @@ function completeLevel() {
   const next = levels.find(l => l.id === currentLevel.id + 1);
   unlockedLevel = Math.max(unlockedLevel, next ? next.id : levels.length);
   try { localStorage.setItem('zombie-unlocked', String(unlockedLevel)); } catch (err) { /* 忽略存储错误 */ }
+  const goldReward = 60 + currentLevel.totalWaves * 25 + kills * 2;
+  const diamondReward = currentLevel.id % 5 === 0 ? 10 : 3;
+  playerProfile.gold += goldReward;
+  playerProfile.diamonds += diamondReward;
+  playerProfile.level = Math.max(playerProfile.level, currentLevel.id);
+  saveProfile();
+  updateLobbyStats();
   renderLevelList();
+  renderLevelCarousel();
   audio.bossDown();
   music.setMode('menu');
   music.stop(.55);
@@ -368,12 +414,15 @@ function enterLobby() {
   state = 'menu';
   music.stop(.25);
   if (actx && musicEnabled) music.setMode('menu', true);
+  updateLobbyStats();
+  renderLevelCarousel();
   renderLevelList();
   ui.menu.classList.add('hidden');
   ui.dead.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.levelComplete.classList.add('hidden');
   ui.profileModal.classList.add('hidden');
+  ui.levelListModal.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
   ui.hud.classList.add('hidden');
   ui.levelSelect.classList.remove('hidden');
@@ -396,9 +445,66 @@ function renderLevelList() {
   });
 }
 
-function startLevel(level) {
-  if (state === 'playing' && level === currentLevel) return;
+function unlockedLevels() { return levels.filter(l => l.id <= unlockedLevel); }
+function renderLevelCarousel() {
+  const unlocked = unlockedLevels();
+  selectedLevelIndex = clamp(selectedLevelIndex, 0, unlocked.length - 1);
+  const level = unlocked[selectedLevelIndex] || levels[0];
   currentLevel = level;
+  const prev = unlocked[selectedLevelIndex - 1];
+  const next = levels[level.id]; // 下一关卡对象
+  const nextLocked = !!next && next.id > unlockedLevel;
+  ui.prevLevelCard.classList.toggle('hidden', !prev);
+  ui.currentLevelCard.classList.remove('hidden');
+  ui.nextLevelCard.classList.toggle('hidden', !next);
+  if (prev) fillCarouselCard(ui.prevLevelCard, prev, false, false);
+  fillCarouselCard(ui.currentLevelCard, level, false, false);
+  if (next) fillCarouselCard(ui.nextLevelCard, next, nextLocked, true);
+  ui.prevLevelArrow.disabled = selectedLevelIndex <= 0;
+  ui.nextLevelArrow.disabled = !next || nextLocked;
+  ui.startLevelBtn.textContent = `开始作战 · ${level.name.split(' · ')[0]}`;
+}
+
+function fillCarouselCard(card, level, locked, isNext) {
+  card.classList.toggle('locked', locked);
+  card.disabled = locked;
+  card.innerHTML = `<span><b>${level.id}. ${level.name}</b><span class="level-theme">${level.theme === 'day' ? '白天地图' : '黑夜地图'} · ${level.totalWaves} 波</span><span>${level.desc}</span></span><span class="level-lock">${locked ? '🔒' : ''}</span>`;
+}
+
+function selectLevelBy(delta) {
+  const unlocked = unlockedLevels();
+  const nextIndex = clamp(selectedLevelIndex + delta, 0, unlocked.length - 1);
+  if (nextIndex !== selectedLevelIndex) {
+    selectedLevelIndex = nextIndex;
+    renderLevelCarousel();
+  }
+}
+
+function openLevelList() {
+  renderLevelList();
+  ui.levelListModal.classList.remove('hidden');
+}
+function closeLevelList() {
+  ui.levelListModal.classList.add('hidden');
+}
+function startSelectedLevel() {
+  const level = unlockedLevels()[selectedLevelIndex] || levels[0];
+  if (!level || level.id > unlockedLevel) {
+    showComingSoon('当前关卡尚未解锁');
+    return;
+  }
+  startLevel(level);
+}
+
+function startLevel(level) {
+  if (!level) return;
+  if (state === 'playing' && level === currentLevel) return;
+  if (level.id > unlockedLevel) {
+    showComingSoon('该关卡尚未解锁');
+    return;
+  }
+  currentLevel = level;
+  selectedLevelIndex = Math.max(0, unlockedLevels().findIndex(l => l.id === level.id));
   resetGame(level);
 }
 
@@ -1902,6 +2008,23 @@ ui.levelLobbyBtn.addEventListener('click', enterLobby);
 ui.shopBtn.addEventListener('click', () => showComingSoon('商店'));
 ui.upgradeBtn.addEventListener('click', () => showComingSoon('升级'));
 ui.inventoryBtn.addEventListener('click', () => showComingSoon('背包'));
+ui.levelListBtn.addEventListener('click', openLevelList);
+ui.levelListCloseBtn.addEventListener('click', closeLevelList);
+ui.startLevelBtn.addEventListener('click', startSelectedLevel);
+ui.currentLevelCard.addEventListener('click', startSelectedLevel);
+ui.prevLevelCard.addEventListener('click', () => selectLevelBy(-1));
+ui.prevLevelArrow.addEventListener('click', () => selectLevelBy(-1));
+ui.nextLevelArrow.addEventListener('click', () => selectLevelBy(1));
+ui.nextLevelCard.addEventListener('click', () => {
+  const next = levels[currentLevel.id];
+  if (next && next.id > unlockedLevel) showComingSoon('下一关尚未解锁');
+  else selectLevelBy(1);
+});
+ui.playerNameInput.addEventListener('change', () => {
+  playerProfile.name = String(ui.playerNameInput.value || '').trim().slice(0, 10) || '玩家';
+  saveProfile();
+  updateLobbyStats();
+});
 
 function beginStartGame() {
   if (startLoadingTimer) return;
@@ -2047,6 +2170,8 @@ function showMenu() {
 renderAvatarPresets();
 applyAvatar();
 renderLevelList();
+updateLobbyStats();
+renderLevelCarousel();
 syncSettingsUI();
 resetGame();
 showMenu();

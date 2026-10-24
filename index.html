@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261026a">
+  <link rel="stylesheet" href="style.css?v=20261027a">
 </head>
 <body>
   <main id="app">
@@ -49,6 +49,7 @@
           <button id="profileCloseBtn" class="close-btn" aria-label="关闭">×</button>
           <p class="kicker">玩家档案</p>
           <div id="avatarImage" class="avatar-image" title="点击上传头像"></div>
+          <input id="playerNameInput" class="player-name-input" maxlength="10" value="玩家" title="点击修改昵称">
           <button id="avatarUploadBtn" class="ghost small">更换头像</button>
           <div id="avatarPresets" class="avatar-presets"></div>
           <input id="avatarFileInput" type="file" accept="image/*" class="hidden">
@@ -62,9 +63,46 @@
       </section>
 
       <section id="levelSelect" class="overlay hidden">
-        <button id="avatarBtn" class="avatar-corner" aria-label="玩家头像与设置"><span id="avatarBtnImage" class="avatar-image"></span></button>
+        <div id="lobbyTop" class="lobby-top">
+          <button id="avatarBtn" class="avatar-corner" aria-label="玩家头像与设置"><span id="avatarBtnImage" class="avatar-image"></span></button>
+          <div class="player-id">
+            <b id="playerName">玩家</b>
+            <span id="playerLevel">LV 1</span>
+          </div>
+          <span class="lobby-spacer"></span>
+          <div class="resources">
+            <span class="resource diamond"><i></i><b id="diamondCount">0</b></span>
+            <span class="resource gold"><i></i><b id="goldCount">0</b></span>
+          </div>
+        </div>
+
+        <div id="lobbyCenter" class="lobby-center">
+          <div id="levelShowcase" class="level-showcase">
+            <button id="prevLevelArrow" class="level-arrow" aria-label="上一关">‹</button>
+            <div id="levelSlide" class="level-slide">
+              <button id="prevLevelCard" class="level-card side-card"></button>
+              <button id="currentLevelCard" class="level-card main-card"></button>
+              <button id="nextLevelCard" class="level-card side-card"></button>
+            </div>
+            <button id="nextLevelArrow" class="level-arrow" aria-label="下一关">›</button>
+          </div>
+          <button id="startLevelBtn" class="primary">开始作战</button>
+          <div id="comingSoon" class="coming-soon hidden"></div>
+        </div>
+
+        <div class="lobby-actions">
+          <button id="shopBtn" class="ghost">商店</button>
+          <button id="upgradeBtn" class="ghost">升级</button>
+          <button id="levelListBtn" class="ghost">关卡</button>
+          <button id="inventoryBtn" class="ghost">背包</button>
+          <button id="extrasBtn" class="ghost" disabled>扩展关卡</button>
+        </div>
+      </section>
+
+      <section id="levelListModal" class="overlay hidden">
         <div class="panel level-panel">
-          <p class="kicker">主界面</p>
+          <button id="levelListCloseBtn" class="close-btn" aria-label="关闭关卡列表">×</button>
+          <p class="kicker">全部关卡</p>
           <h1>选择关卡</h1>
           <div class="level-groups">
             <div class="level-group">
@@ -76,14 +114,6 @@
               <div id="dayLevels" class="level-list"></div>
             </div>
           </div>
-          <div id="comingSoon" class="coming-soon hidden"></div>
-        </div>
-        <div class="lobby-actions">
-          <button id="shopBtn" class="ghost">商店</button>
-          <button id="upgradeBtn" class="ghost">升级</button>
-          <span class="lobby-spacer"></span>
-          <button id="inventoryBtn" class="ghost">背包</button>
-          <button id="extrasBtn" class="ghost" disabled>扩展关卡</button>
         </div>
       </section>
 
@@ -147,6 +177,6 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261026a" defer></script>
+  <script src="game.js?v=20261027a" defer></script>
 </body>
 </html>

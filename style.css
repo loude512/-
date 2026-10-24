@@ -66,6 +66,7 @@ h1{margin:8px 0 10px;font-size:clamp(34px,5vw,56px);letter-spacing:.04em}
 .avatar-presets button{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.4);cursor:pointer;background-clip:padding-box}
 .profile-panel{position:relative;width:min(460px,92%)}
 .ghost.small{width:auto;margin:0 auto 8px;padding:7px 14px;display:inline-block}
+.player-name-input{width:min(220px,70%);margin:0 auto 8px;text-align:center;border:1px solid var(--line);border-radius:10px;background:#10141d;color:#fff;font-weight:900;padding:8px 10px}
 .level-panel{width:min(720px,94%);max-height:82%;overflow:auto;text-align:left}
 .level-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:10px}
 .level-group{border:1px solid var(--line);border-radius:16px;background:#10141d;padding:12px}
@@ -81,9 +82,44 @@ h1{margin:8px 0 10px;font-size:clamp(34px,5vw,56px);letter-spacing:.04em}
 .lobby-actions .ghost{width:auto;margin:0;padding:10px 18px}
 .lobby-spacer{flex:1}
 .coming-soon{margin-top:12px;color:#ffd166;font-weight:900;text-align:center}
-#levelSelect .level-panel{max-height:78%;margin-bottom:96px}
+.lobby-top{position:absolute;top:12px;left:12px;right:12px;display:flex;align-items:center;gap:10px;z-index:3;pointer-events:none}
+.lobby-top .avatar-corner{position:static;width:64px;height:64px;flex:0 0 64px;pointer-events:auto}
+.player-id{display:flex;flex-direction:column;justify-content:center;gap:2px;pointer-events:auto;background:rgba(10,13,19,.62);border:1px solid var(--line);border-radius:12px;padding:7px 10px;min-width:120px}
+.player-id b{color:var(--text);font-size:15px}
+.player-id span{color:#62a8ff;font-size:12px;font-weight:900}
+.resources{display:flex;gap:8px;pointer-events:auto}
+.resource{display:flex;align-items:center;gap:5px;border-radius:99px;border:1px solid var(--line);background:rgba(10,13,19,.62);padding:6px 10px;color:var(--muted);font-size:12px;font-weight:900}
+.resource i{width:14px;height:14px;border-radius:50%;display:inline-block}
+.resource.diamond i{background:linear-gradient(135deg,#9be7ff,#62a8ff)}
+.resource.gold i{background:linear-gradient(135deg,#ffe9a8,#ffb84a)}
+.resource b{color:#fff}
+.lobby-center{position:absolute;inset:96px 0 84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;pointer-events:none}
+.level-showcase{display:flex;align-items:center;gap:14px;pointer-events:auto}
+.level-arrow{width:50px;height:64px;border-radius:14px;border:1px solid var(--line);background:#151b26;color:#ffd166;font-size:34px;font-weight:900;cursor:pointer}
+.level-arrow:disabled{opacity:.35;cursor:not-allowed}
+.level-slide{display:grid;grid-template-columns:150px 210px 150px;align-items:center;gap:10px}
+.level-card.side-card{height:128px;background:#101620}
+.level-card.main-card{height:172px;background:linear-gradient(180deg,#20283a,#141a25);box-shadow:0 18px 46px rgba(0,0,0,.4);border-color:rgba(255,209,102,.34)}
+.level-card .level-theme{color:#9aa6b8;font-size:11px;margin-top:6px}
+.level-card .level-lock{margin-left:auto;color:#8f99aa;font-size:18px}
+#startLevelBtn{width:min(280px,44%);pointer-events:auto;margin-top:4px}
+#levelListBtn{width:auto;margin:0 auto;padding:10px 20px}
+#levelListModal .panel{position:relative}
+#levelListModal .level-panel{max-height:78%;width:min(720px,94%);margin:auto}
 #levelSelect h1{margin:4px 0 8px}
 .lobby-actions .ghost{width:auto;margin:0;padding:10px 18px}
+@media (max-width:820px) and (max-height:560px), (orientation:landscape) and (max-height:560px){
+  .lobby-center{inset:78px 0 72px;gap:12px}
+  .level-showcase{gap:8px}
+  .level-slide{grid-template-columns:104px 164px 104px;gap:7px}
+  .level-card.side-card{height:104px}
+  .level-card.main-card{height:146px}
+  .level-arrow{width:40px;height:54px;font-size:28px}
+  #startLevelBtn{width:min(250px,50%);font-size:17px}
+  .lobby-top{top:8px;left:8px;right:8px;gap:7px}
+  .player-id{min-width:92px;padding:5px 8px}
+  .resource{padding:5px 8px}
+}
 @media (max-width:820px){
   .level-panel{width:min(520px,94%);max-height:62%;margin:8px auto 88px;padding:14px}
   .level-groups{grid-template-columns:1fr;gap:10px}
@@ -96,7 +132,7 @@ h1{margin:8px 0 10px;font-size:clamp(34px,5vw,56px);letter-spacing:.04em}
   .avatar-image{width:64px;height:64px}
 }
 @media (orientation:landscape) and (max-height:600px){
-  #levelSelect .level-panel{max-height:62%;margin:4px auto 84px;padding:12px}
+  #levelListModal .level-panel{max-height:62%;margin:4px auto 0;padding:12px}
   .level-groups{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .level-group h2{font-size:13px;margin-bottom:7px}
   .level-card{padding:7px 9px}
