@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261028a">
+  <link rel="stylesheet" href="style.css?v=20261029a">
 </head>
 <body>
   <main id="app">
@@ -173,12 +173,20 @@
 
       <section id="levelComplete" class="overlay hidden">
         <div class="panel clear-panel">
+          <div class="clear-ribbon"><span>SAFE ZONE</span></div>
+          <div id="clearHpRing" class="clear-ring" style="--hp:100">
+            <i></i>
+            <b id="levelHp">100%</b>
+          </div>
           <p class="kicker">安全撤离</p>
-          <h1 id="levelClearTitle">《100%》完美通关</h1>
-          <div id="levelStars" class="clear-stars">⭐⭐⭐</div>
+          <h1 id="levelClearTitle">完美通关</h1>
+          <p id="clearLevelName" class="clear-sub">第一关 · 街口</p>
+          <div id="levelStars" class="clear-stars">
+            <span class="star"></span><span class="star"></span><span class="star"></span>
+          </div>
           <div class="result">
-            <div><span>剩余血量</span><b id="levelHp">100%</b></div>
             <div><span>本关分数</span><b id="levelScore">0</b></div>
+            <div><span>坚持波次</span><b id="levelWaves">3</b></div>
             <div><span>击杀数</span><b id="levelKills">0</b></div>
           </div>
           <button id="restartLevelBtn" class="primary">再次挑战</button>
@@ -232,6 +240,6 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261028a" defer></script>
+  <script src="game.js?v=20261029a" defer></script>
 </body>
 </html>
