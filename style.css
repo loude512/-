@@ -93,7 +93,24 @@ h1{margin:8px 0 10px;font-size:clamp(34px,5vw,56px);letter-spacing:.04em}
 .resource.diamond i{background:linear-gradient(135deg,#9be7ff,#62a8ff)}
 .resource.gold i{background:linear-gradient(135deg,#ffe9a8,#ffb84a)}
 .resource b{color:#fff}
-.lobby-center{position:absolute;inset:96px 0 84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;pointer-events:none}
+.lobby-center{position:absolute;inset:96px 0 84px;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.lobby-view{width:min(940px,94%);height:100%;margin:auto;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.lobby-page{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:auto;padding:2px}
+.lobby-page.hidden{display:none}
+.lobby-page .level-panel,.lobby-page .profile-panel,.feature-panel{max-height:100%;width:min(760px,100%);margin:auto;overflow:auto}
+.feature-panel{padding:24px}
+.feature-panel h1{margin:4px 0 10px;color:#ffd166}
+.feature-desc{color:var(--muted);margin:0 0 16px;text-align:center}
+.feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.feature-card{display:flex;flex-direction:column;align-items:center;gap:8px;border:1px solid var(--line);border-radius:14px;background:#10141d;padding:18px 10px}
+.feature-card b{color:var(--text)}
+.feature-card span{color:var(--muted);font-size:12px}
+.feature-card.locked{opacity:.55}
+.lobby-actions .ghost.active{border-color:#ffd166;color:#ffd166;background:rgba(255,209,102,.1)}
+.clear-panel{border-color:rgba(255,209,102,.5);box-shadow:0 24px 70px rgba(0,0,0,.48)}
+.clear-panel h1{color:#ffd166;font-size:34px;margin:2px 0 6px}
+.clear-stars{font-size:34px;line-height:1.2;margin:2px 0 12px;filter:drop-shadow(0 0 10px rgba(255,209,102,.35))}
+#levelView{flex-direction:column;gap:18px}
 .level-showcase{display:flex;align-items:center;gap:14px;pointer-events:auto}
 .level-arrow{width:50px;height:64px;border-radius:14px;border:1px solid var(--line);background:#151b26;color:#ffd166;font-size:34px;font-weight:900;cursor:pointer}
 .level-arrow:disabled{opacity:.35;cursor:not-allowed}

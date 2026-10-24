@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261027a">
+  <link rel="stylesheet" href="style.css?v=20261028a">
 </head>
 <body>
   <main id="app">
@@ -44,24 +44,6 @@
         </div>
       </section>
 
-      <section id="profileModal" class="overlay hidden">
-        <div class="panel profile-panel">
-          <button id="profileCloseBtn" class="close-btn" aria-label="关闭">×</button>
-          <p class="kicker">玩家档案</p>
-          <div id="avatarImage" class="avatar-image" title="点击上传头像"></div>
-          <input id="playerNameInput" class="player-name-input" maxlength="10" value="玩家" title="点击修改昵称">
-          <button id="avatarUploadBtn" class="ghost small">更换头像</button>
-          <div id="avatarPresets" class="avatar-presets"></div>
-          <input id="avatarFileInput" type="file" accept="image/*" class="hidden">
-          <div class="settings" aria-label="游戏设置">
-            <label class="slider">总音量 <input id="profileMasterVolume" type="range" min="0" max="100" value="90"><b id="profileMasterVolumeText">90%</b></label>
-            <label class="slider">音效 <input id="profileSfxVolume" type="range" min="0" max="100" value="90"><b id="profileSfxVolumeText">90%</b></label>
-            <label class="slider">音乐 <input id="profileMusicVolume" type="range" min="0" max="100" value="95"><b id="profileMusicVolumeText">95%</b></label>
-            <label class="slider">震动 <input id="profileShakeVolume" type="range" min="0" max="100" value="80"><b id="profileShakeVolumeText">80%</b></label>
-          </div>
-        </div>
-      </section>
-
       <section id="levelSelect" class="overlay hidden">
         <div id="lobbyTop" class="lobby-top">
           <button id="avatarBtn" class="avatar-corner" aria-label="玩家头像与设置"><span id="avatarBtnImage" class="avatar-image"></span></button>
@@ -77,57 +59,130 @@
         </div>
 
         <div id="lobbyCenter" class="lobby-center">
-          <div id="levelShowcase" class="level-showcase">
-            <button id="prevLevelArrow" class="level-arrow" aria-label="上一关">‹</button>
-            <div id="levelSlide" class="level-slide">
-              <button id="prevLevelCard" class="level-card side-card"></button>
-              <button id="currentLevelCard" class="level-card main-card"></button>
-              <button id="nextLevelCard" class="level-card side-card"></button>
-            </div>
-            <button id="nextLevelArrow" class="level-arrow" aria-label="下一关">›</button>
+          <div id="lobbyView" class="lobby-view">
+            <section id="levelView" class="lobby-page active">
+              <div id="levelShowcase" class="level-showcase">
+                <button id="prevLevelArrow" class="level-arrow" aria-label="上一关">‹</button>
+                <div id="levelSlide" class="level-slide">
+                  <button id="prevLevelCard" class="level-card side-card"></button>
+                  <button id="currentLevelCard" class="level-card main-card"></button>
+                  <button id="nextLevelCard" class="level-card side-card"></button>
+                </div>
+                <button id="nextLevelArrow" class="level-arrow" aria-label="下一关">›</button>
+              </div>
+              <button id="startLevelBtn" class="primary">开始作战</button>
+              <div id="comingSoon" class="coming-soon hidden"></div>
+            </section>
+
+            <section id="levelListView" class="lobby-page hidden">
+              <div class="panel level-panel">
+                <p class="kicker">全部关卡</p>
+                <h1>选择关卡</h1>
+                <div class="level-groups">
+                  <div class="level-group">
+                    <h2>黑夜地图</h2>
+                    <div id="nightLevels" class="level-list"></div>
+                  </div>
+                  <div class="level-group">
+                    <h2>白天地图</h2>
+                    <div id="dayLevels" class="level-list"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="profileView" class="lobby-page hidden">
+              <div class="panel profile-panel">
+                <p class="kicker">玩家档案</p>
+                <div id="avatarImage" class="avatar-image" title="点击上传头像"></div>
+                <input id="playerNameInput" class="player-name-input" maxlength="10" value="玩家" title="点击修改昵称">
+                <button id="avatarUploadBtn" class="ghost small">更换头像</button>
+                <div id="avatarPresets" class="avatar-presets"></div>
+                <input id="avatarFileInput" type="file" accept="image/*" class="hidden">
+                <div class="settings" aria-label="游戏设置">
+                  <label class="slider">总音量 <input id="profileMasterVolume" type="range" min="0" max="100" value="90"><b id="profileMasterVolumeText">90%</b></label>
+                  <label class="slider">音效 <input id="profileSfxVolume" type="range" min="0" max="100" value="90"><b id="profileSfxVolumeText">90%</b></label>
+                  <label class="slider">音乐 <input id="profileMusicVolume" type="range" min="0" max="100" value="95"><b id="profileMusicVolumeText">95%</b></label>
+                  <label class="slider">震动 <input id="profileShakeVolume" type="range" min="0" max="100" value="80"><b id="profileShakeVolumeText">80%</b></label>
+                </div>
+              </div>
+            </section>
+
+            <section id="shopView" class="lobby-page hidden">
+              <div class="panel feature-panel">
+                <p class="kicker">补给交易</p>
+                <h1>商店</h1>
+                <p class="feature-desc">金币与钻石商店正在准备中，后续会开放购买。</p>
+                <div class="feature-grid">
+                  <div class="feature-card"><b>武器补给</b><span>即将开放</span></div>
+                  <div class="feature-card"><b>医疗物资</b><span>即将开放</span></div>
+                  <div class="feature-card"><b>特殊道具</b><span>即将开放</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="upgradeView" class="lobby-page hidden">
+              <div class="panel feature-panel">
+                <p class="kicker">角色强化</p>
+                <h1>升级</h1>
+                <p class="feature-desc">血量、移动速度与武器强化正在准备中。</p>
+                <div class="feature-grid">
+                  <div class="feature-card"><b>生命强化</b><span>即将开放</span></div>
+                  <div class="feature-card"><b>移动强化</b><span>即将开放</span></div>
+                  <div class="feature-card"><b>武器强化</b><span>即将开放</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="inventoryView" class="lobby-page hidden">
+              <div class="panel feature-panel">
+                <p class="kicker">战备仓库</p>
+                <h1>背包</h1>
+                <p class="feature-desc">武器、消耗品与自定义头像都将在背包中统一管理。</p>
+                <div class="feature-grid">
+                  <div class="feature-card"><b>主武器</b><span>球棍 / 手枪</span></div>
+                  <div class="feature-card"><b>补给武器</b><span>关卡内掉落</span></div>
+                  <div class="feature-card"><b>消耗品</b><span>即将开放</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section id="extrasView" class="lobby-page hidden">
+              <div class="panel feature-panel locked-panel">
+                <p class="kicker">额外内容</p>
+                <h1>扩展关卡</h1>
+                <p class="feature-desc">扩展关卡暂未开放。</p>
+                <div class="feature-grid">
+                  <div class="feature-card locked"><b>挑战模式</b><span>🔒 未开放</span></div>
+                  <div class="feature-card locked"><b>每日任务</b><span>🔒 未开放</span></div>
+                  <div class="feature-card locked"><b>无尽尸潮</b><span>🔒 未开放</span></div>
+                </div>
+              </div>
+            </section>
           </div>
-          <button id="startLevelBtn" class="primary">开始作战</button>
-          <div id="comingSoon" class="coming-soon hidden"></div>
         </div>
 
         <div class="lobby-actions">
-          <button id="shopBtn" class="ghost">商店</button>
-          <button id="upgradeBtn" class="ghost">升级</button>
-          <button id="levelListBtn" class="ghost">关卡</button>
-          <button id="inventoryBtn" class="ghost">背包</button>
-          <button id="extrasBtn" class="ghost" disabled>扩展关卡</button>
-        </div>
-      </section>
-
-      <section id="levelListModal" class="overlay hidden">
-        <div class="panel level-panel">
-          <button id="levelListCloseBtn" class="close-btn" aria-label="关闭关卡列表">×</button>
-          <p class="kicker">全部关卡</p>
-          <h1>选择关卡</h1>
-          <div class="level-groups">
-            <div class="level-group">
-              <h2>黑夜地图</h2>
-              <div id="nightLevels" class="level-list"></div>
-            </div>
-            <div class="level-group">
-              <h2>白天地图</h2>
-              <div id="dayLevels" class="level-list"></div>
-            </div>
-          </div>
+          <button id="shopBtn" class="ghost" data-lobby-view="shopView">商店</button>
+          <button id="upgradeBtn" class="ghost" data-lobby-view="upgradeView">升级</button>
+          <button id="levelListBtn" class="ghost" data-lobby-view="levelListView">关卡</button>
+          <button id="inventoryBtn" class="ghost" data-lobby-view="inventoryView">背包</button>
+          <button id="extrasBtn" class="ghost" data-lobby-view="extrasView" disabled>扩展关卡</button>
         </div>
       </section>
 
       <section id="levelComplete" class="overlay hidden">
-        <div class="panel">
+        <div class="panel clear-panel">
           <p class="kicker">安全撤离</p>
-          <h1>关卡完成</h1>
+          <h1 id="levelClearTitle">《100%》完美通关</h1>
+          <div id="levelStars" class="clear-stars">⭐⭐⭐</div>
           <div class="result">
+            <div><span>剩余血量</span><b id="levelHp">100%</b></div>
             <div><span>本关分数</span><b id="levelScore">0</b></div>
-            <div><span>坚持波次</span><b id="levelWaves">3</b></div>
             <div><span>击杀数</span><b id="levelKills">0</b></div>
           </div>
-          <button id="nextLevelBtn" class="primary">下一关</button>
-          <button id="levelLobbyBtn" class="ghost">返回主界面</button>
+          <button id="restartLevelBtn" class="primary">再次挑战</button>
+          <button id="levelLobbyBtn" class="ghost">返回主菜单</button>
         </div>
       </section>
 
@@ -177,6 +232,6 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261027a" defer></script>
+  <script src="game.js?v=20261028a" defer></script>
 </body>
 </html>

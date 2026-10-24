@@ -46,8 +46,6 @@ const ui = {
   exitInfo: document.getElementById('exitInfo'),
   startLoading: document.getElementById('startLoading'),
   startLoadingFill: document.getElementById('startLoadingFill'),
-  profileModal: document.getElementById('profileModal'),
-  profileCloseBtn: document.getElementById('profileCloseBtn'),
   avatarImage: document.getElementById('avatarImage'),
   avatarUploadBtn: document.getElementById('avatarUploadBtn'),
   avatarPresets: document.getElementById('avatarPresets'),
@@ -70,8 +68,13 @@ const ui = {
   inventoryBtn: document.getElementById('inventoryBtn'),
   extrasBtn: document.getElementById('extrasBtn'),
   levelListBtn: document.getElementById('levelListBtn'),
-  levelListModal: document.getElementById('levelListModal'),
-  levelListCloseBtn: document.getElementById('levelListCloseBtn'),
+  levelView: document.getElementById('levelView'),
+  levelListView: document.getElementById('levelListView'),
+  profileView: document.getElementById('profileView'),
+  shopView: document.getElementById('shopView'),
+  upgradeView: document.getElementById('upgradeView'),
+  inventoryView: document.getElementById('inventoryView'),
+  extrasView: document.getElementById('extrasView'),
   playerName: document.getElementById('playerName'),
   playerLevel: document.getElementById('playerLevel'),
   diamondCount: document.getElementById('diamondCount'),
@@ -85,10 +88,12 @@ const ui = {
   playerNameInput: document.getElementById('playerNameInput'),
   comingSoon: document.getElementById('comingSoon'),
   levelComplete: document.getElementById('levelComplete'),
+  levelClearTitle: document.getElementById('levelClearTitle'),
+  levelStars: document.getElementById('levelStars'),
+  levelHp: document.getElementById('levelHp'),
   levelScore: document.getElementById('levelScore'),
-  levelWaves: document.getElementById('levelWaves'),
   levelKills: document.getElementById('levelKills'),
-  nextLevelBtn: document.getElementById('nextLevelBtn'),
+  restartLevelBtn: document.getElementById('restartLevelBtn'),
   levelLobbyBtn: document.getElementById('levelLobbyBtn')
 };
 
@@ -261,10 +266,7 @@ function renderAvatarPresets() {
 }
 function openProfile() {
   syncSettingsUI();
-  ui.profileModal.classList.remove('hidden');
-}
-function closeProfile() {
-  ui.profileModal.classList.add('hidden');
+  showLobbyView('profileView');
 }
 
 let state = 'menu';
@@ -324,9 +326,7 @@ function resetGame(config = currentLevel || levels[0]) {
   ui.dead.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.levelSelect.classList.add('hidden');
-  ui.levelListModal.classList.add('hidden');
   ui.levelComplete.classList.add('hidden');
-  ui.profileModal.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
   ui.hud.classList.remove('hidden');
   updateHud();
@@ -398,11 +398,13 @@ function completeLevel() {
   audio.bossDown();
   music.setMode('menu');
   music.stop(.55);
+  const hpPct = player && player.maxHp ? clamp(Math.round(player.hp / player.maxHp * 100), 0, 100) : 0;
+  const isPerfect = hpPct >= 100;
+  ui.levelHp.textContent = `${hpPct}%`;
+  ui.levelClearTitle.textContent = isPerfect ? '《100%》完美通关' : `《${hpPct}%》通关`;
+  ui.levelStars.textContent = isPerfect ? '⭐⭐⭐' : (hpPct >= 60 ? '⭐⭐' : '⭐');
   ui.levelScore.textContent = score;
-  ui.levelWaves.textContent = Math.max(1, wave);
   ui.levelKills.textContent = kills;
-  if (next) ui.nextLevelBtn.textContent = `下一关 · ${next.name.split(' · ')[0]}`;
-  else ui.nextLevelBtn.textContent = '已是最后一关';
   setTimeout(() => {
     ui.hud.classList.add('hidden');
     ui.levelComplete.classList.remove('hidden');
@@ -417,12 +419,11 @@ function enterLobby() {
   updateLobbyStats();
   renderLevelCarousel();
   renderLevelList();
+  showLobbyView('levelView', true);
   ui.menu.classList.add('hidden');
   ui.dead.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.levelComplete.classList.add('hidden');
-  ui.profileModal.classList.add('hidden');
-  ui.levelListModal.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
   ui.hud.classList.add('hidden');
   ui.levelSelect.classList.remove('hidden');
@@ -480,12 +481,20 @@ function selectLevelBy(delta) {
   }
 }
 
-function openLevelList() {
-  renderLevelList();
-  ui.levelListModal.classList.remove('hidden');
-}
-function closeLevelList() {
-  ui.levelListModal.classList.add('hidden');
+const lobbyViewIds = ['levelView', 'levelListView', 'profileView', 'shopView', 'upgradeView', 'inventoryView', 'extrasView'];
+let currentLobbyView = 'levelView';
+function showLobbyView(name, silent = false) {
+  if (!lobbyViewIds.includes(name)) name = 'levelView';
+  currentLobbyView = name;
+  lobbyViewIds.forEach(viewId => {
+    if (ui[viewId]) ui[viewId].classList.toggle('hidden', viewId !== name);
+  });
+  document.querySelectorAll('.lobby-actions [data-lobby-view]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lobbyView === name && btn.id !== 'extrasBtn');
+  });
+  if (name === 'levelListView') renderLevelList();
+  if (name === 'profileView') syncSettingsUI();
+  if (!silent && actx) audio.wave();
 }
 function startSelectedLevel() {
   const level = unlockedLevels()[selectedLevelIndex] || levels[0];
@@ -807,13 +816,7 @@ function update(dt) {
 
   if (nextWaveTimer > 0) {
     nextWaveTimer -= dt;
-    if (nextWaveTimer <= 0) {
-      if (wave >= levelConfig.totalWaves) {
-        completeLevel();
-        return;
-      }
-      startWave(wave + 1);
-    }
+    if (nextWaveTimer <= 0) startWave(wave + 1);
   }
   if (waveBannerAt > 0) {
     waveBannerAt -= dt;
@@ -826,8 +829,12 @@ function update(dt) {
       spawnOne(spawnQueue.shift());
       spawnTimer = .42 + Math.random() * .5 - Math.min(.28, wave * .012);
     }
-  } else if (!enemies.length && nextWaveTimer <= 0 && wave < levelConfig.totalWaves) {
-    nextWaveTimer = 3.4;
+  } else if (!enemies.length && nextWaveTimer <= 0) {
+    if (wave >= levelConfig.totalWaves) {
+      completeLevel();
+      return;
+    }
+    nextWaveTimer = wave > 0 ? 3.4 : 1.2;
     if (wave > 0) {
       score += 50 + wave * 20;
       texts.push({ x: player.x, y: player.y - 92, vy: -64, life: 1.2, max: 1.2, text: `波次奖励 +${50 + wave * 20}`, color: '#7ee081' });
@@ -1983,7 +1990,6 @@ ui.profileMasterVolume.addEventListener('input', () => applySettingChange('maste
 ui.profileSfxVolume.addEventListener('input', () => applySettingChange('sfx', Number(ui.profileSfxVolume.value)));
 ui.profileMusicVolume.addEventListener('input', () => applySettingChange('music', Number(ui.profileMusicVolume.value)));
 ui.profileShakeVolume.addEventListener('input', () => applySettingChange('shake', Number(ui.profileShakeVolume.value)));
-ui.profileCloseBtn.addEventListener('click', closeProfile);
 ui.avatarBtn.addEventListener('click', openProfile);
 ui.avatarImage.addEventListener('click', () => ui.avatarFileInput.click());
 ui.avatarUploadBtn.addEventListener('click', () => ui.avatarFileInput.click());
@@ -1999,17 +2005,11 @@ ui.avatarFileInput.addEventListener('change', e => {
   reader.readAsDataURL(file);
   e.target.value = '';
 });
-ui.nextLevelBtn.addEventListener('click', () => {
-  const next = levels.find(l => l.id === currentLevel.id + 1);
-  if (next && next.id <= unlockedLevel) startLevel(next);
-  else enterLobby();
+document.querySelectorAll('.lobby-actions [data-lobby-view]').forEach(btn => {
+  btn.addEventListener('click', () => showLobbyView(btn.dataset.lobbyView));
 });
+ui.restartLevelBtn.addEventListener('click', () => resetGame(currentLevel));
 ui.levelLobbyBtn.addEventListener('click', enterLobby);
-ui.shopBtn.addEventListener('click', () => showComingSoon('商店'));
-ui.upgradeBtn.addEventListener('click', () => showComingSoon('升级'));
-ui.inventoryBtn.addEventListener('click', () => showComingSoon('背包'));
-ui.levelListBtn.addEventListener('click', openLevelList);
-ui.levelListCloseBtn.addEventListener('click', closeLevelList);
 ui.startLevelBtn.addEventListener('click', startSelectedLevel);
 ui.currentLevelCard.addEventListener('click', startSelectedLevel);
 ui.prevLevelCard.addEventListener('click', () => selectLevelBy(-1));
@@ -2162,7 +2162,6 @@ function showMenu() {
   ui.dead.classList.add('hidden');
   ui.levelSelect.classList.add('hidden');
   ui.levelComplete.classList.add('hidden');
-  ui.profileModal.classList.add('hidden');
   ui.hud.classList.add('hidden');
   ui.bossHud.classList.add('hidden');
 }
@@ -2172,6 +2171,7 @@ applyAvatar();
 renderLevelList();
 updateLobbyStats();
 renderLevelCarousel();
+showLobbyView('levelView', true);
 syncSettingsUI();
 resetGame();
 showMenu();
