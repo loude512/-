@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>末日横板：枪械与棍棒打丧尸</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <div id="stage">
+      <canvas id="game" width="960" height="540"></canvas>
+
+      <div id="hud" class="hidden">
+        <div class="hud-left">
+          <div class="hp-wrap">
+            <div class="hp-label">HP</div>
+            <div class="hp-bar"><i id="hpFill"></i></div>
+          </div>
+          <div class="weapon-box">
+            <b id="weaponName">球棍</b>
+            <span id="ammoText">子弹 ∞</span>
+          </div>
+        </div>
+        <div class="hud-right">
+          <div class="stat"><span>波次</span><b id="waveText">1</b></div>
+          <div class="stat"><span>分数</span><b id="scoreText">0</b></div>
+          <div class="stat"><span>击杀</span><b id="killText">0</b></div>
+        </div>
+        <div id="bossHud" class="hidden">
+          <div id="bossName">BOSS · 暴君丧尸</div>
+          <div class="boss-bar"><i id="bossFill"></i></div>
+        </div>
+      </div>
+
+      <div id="waveBanner" class="hidden"><span id="waveBannerText">第 1 波</span></div>
+
+      <section id="menu" class="overlay">
+        <div class="panel">
+          <p class="kicker">2D 网页横板动作射击</p>
+          <h1>末日街区</h1>
+          <p class="lead">用 <b>球棍</b> 近身敲碎丧尸，或者换 <b>手枪</b> 风筝尸潮。上下左右自由走位，活到下一波。</p>
+          <div class="keys">
+            <div><b>WASD / 方向键</b><span>上下左右移动</span></div>
+            <div><b>鼠标 / J / 空格</b><span>瞄准与攻击</span></div>
+            <div><b>Q / 1 / 2</b><span>切换 / 球棍 / 手枪</span></div>
+            <div><b>P / M / B / R</b><span>暂停 / 静音 / 音乐 / 重开</span></div>
+            <div><b>触屏</b><span>摇杆移动 · 按钮攻击/换枪</span></div>
+          </div>
+          <button id="startBtn" class="primary">开始游戏</button>
+          <button id="switchBtn" class="ghost">切换武器 (Q)</button>
+        </div>
+      </section>
+
+      <section id="dead" class="overlay hidden">
+        <div class="panel danger">
+          <p class="kicker">你被尸潮吞没了</p>
+          <h1>游戏结束</h1>
+          <div class="result">
+            <div><span>最终分数</span><b id="finalScore">0</b></div>
+            <div><span>坚持波次</span><b id="finalWave">1</b></div>
+            <div><span>击杀数</span><b id="finalKills">0</b></div>
+          </div>
+          <button id="restartBtn" class="primary">再来一局 (R)</button>
+        </div>
+      </section>
+
+      <section id="pause" class="overlay hidden">
+        <div class="panel">
+          <h1>已暂停</h1>
+          <p>休息一下，尸潮会等你。</p>
+          <button id="resumeBtn" class="primary">继续游戏 (P)</button>
+          <button id="menuBtn" class="ghost">返回标题</button>
+        </div>
+      </section>
+
+      <div id="touchZone">
+        <div id="stickBall"></div>
+        <div id="fireBtn">攻击</div>
+        <div id="swapBtn">换枪</div>
+        <div id="touchPauseBtn" class="round-btn">暂停</div>
+        <div id="touchMuteBtn" class="round-btn">音效</div>
+        <div id="touchMusicBtn" class="round-btn">音乐</div>
+      </div>
+    </div>
+
+    <footer id="tip">提示：执行 <code>npm start</code> 或 <code>node server.js</code> 后，在浏览器输入 <code>http://127.0.0.1:5173</code> 即可游玩；局域网其他设备可输入服务器输出的局域网网址。</footer>
+  </main>
+
+  <audio id="silence"></audio>
+  <script src="game.js" defer></script>
+</body>
+</html>

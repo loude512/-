@@ -1,0 +1,15 @@
+{
+  "name": "zombie-side-scroller",
+  "version": "1.0.0",
+  "description": "末日横板：一个使用枪械和棍棒打丧尸的 2D 网页横板小游戏",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "serve": "node server.js",
+    "check": "node --check game.js && node --check server.js",
+    "deploy": "npx --yes vercel --prod",
+    "deploy:netlify": "npx --yes netlify-cli deploy --prod --dir .",
+    "deploy:cloudflare": "npx --yes wrangler pages deploy ."
+  },
+  "license": "MIT"
+}
