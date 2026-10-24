@@ -32,7 +32,18 @@ const ui = {
   swapBtn: document.getElementById('swapBtn'),
   touchPauseBtn: document.getElementById('touchPauseBtn'),
   touchMuteBtn: document.getElementById('touchMuteBtn'),
-  touchMusicBtn: document.getElementById('touchMusicBtn')
+  touchMusicBtn: document.getElementById('touchMusicBtn'),
+  masterVolume: document.getElementById('masterVolume'),
+  masterVolumeText: document.getElementById('masterVolumeText'),
+  musicVolume: document.getElementById('musicVolume'),
+  musicVolumeText: document.getElementById('musicVolumeText'),
+  sfxVolume: document.getElementById('sfxVolume'),
+  sfxVolumeText: document.getElementById('sfxVolumeText'),
+  pauseMusicToggle: document.getElementById('pauseMusicToggle'),
+  pauseSfxToggle: document.getElementById('pauseSfxToggle'),
+  settingsBtn: document.getElementById('settingsBtn'),
+  exitBtn: document.getElementById('exitBtn'),
+  exitInfo: document.getElementById('exitInfo')
 };
 
 const sprites = {
@@ -89,21 +100,52 @@ for (let i = 0; i < 46; i++) {
   streetItems.push({ x: rand(0, worldWidth), y: rand(laneTop + 28, laneBottom - 10), r: rand(7, 20), kind: Math.random() < .7 ? 'rubble' : 'cone', tilt: rand(-.3, .3) });
 }
 
+const defaultInventory = ['melee', 'gun'];
 const weapons = {
   melee: {
-    name: '球棍', cooldown: .36, damage: 58, range: 106, arc: 1.32, knock: 360, infinite: true,
+    name: '球棍', kind: 'melee', short: '棍', color: '#d9d9df', cooldown: .36, damage: 58, range: 106, arc: 1.32, knock: 360, infinite: true, starter: true,
     desc: '近身横扫'
   },
+  machete: {
+    name: '开山刀', kind: 'melee', short: '刀', color: '#ffcf72', cooldown: .24, damage: 46, range: 124, arc: 1.02, knock: 300, disposable: true, pickupUses: 55,
+    desc: '快速劈砍'
+  },
   gun: {
-    name: '手枪', cooldown: .16, damage: 32, bulletSpeed: 1150, spread: .045, knock: 150, ammoUse: 1,
+    name: '手枪', kind: 'gun', short: '枪', color: '#9fb4d8', cooldown: .16, damage: 32, bulletSpeed: 1150, spread: .045, knock: 150, ammoUse: 1, starter: true,
     desc: '远程点射'
+  },
+  smg: {
+    name: '冲锋枪', kind: 'gun', short: '冲', color: '#7ee081', cooldown: .075, damage: 17, bulletSpeed: 1350, spread: .085, knock: 72, ammoUse: 1, pellets: 1, pickupAmmo: 128, disposable: true,
+    desc: '自动连射'
+  },
+  shotgun: {
+    name: '霰弹枪', kind: 'gun', short: '散', color: '#ff9d5a', cooldown: .58, damage: 22, bulletSpeed: 980, spread: .24, knock: 260, ammoUse: 1, pellets: 6, pickupAmmo: 28, disposable: true,
+    desc: '近距爆发'
+  },
+  rifle: {
+    name: '步枪', kind: 'gun', short: '狙', color: '#62a8ff', cooldown: .94, damage: 112, bulletSpeed: 1750, spread: .015, knock: 430, ammoUse: 1, pellets: 1, pickupAmmo: 18, disposable: true,
+    desc: '高伤单发'
   }
 };
+
+const settings = (() => {
+  const base = { master: .9, music: .95, sfx: .9 };
+  try {
+    const saved = JSON.parse(localStorage.getItem('zombie-settings') || '{}');
+    if (typeof saved.master === 'number') base.master = clamp(saved.master, 0, 1);
+    if (typeof saved.music === 'number') base.music = clamp(saved.music, 0, 1);
+    if (typeof saved.sfx === 'number') base.sfx = clamp(saved.sfx, 0, 1);
+  } catch (err) { /* localStorage 不可用时使用默认值 */ }
+  return base;
+})();
+function saveSettings() {
+  try { localStorage.setItem('zombie-settings', JSON.stringify(settings)); } catch (err) { /* 忽略隐私模式错误 */ }
+}
 
 let state = 'menu';
 let cam = { x: 0, y: 0 };
 let shake = 0;
-let player, enemies, bullets, pickups, particles, texts;
+let player, enemies, bullets, pickups, particles, texts, crates;
 let wave, score, kills, spawnQueue, spawnTimer, nextWaveTimer, waveBannerAt;
 let bossRef;
 let last = 0;
@@ -111,6 +153,7 @@ let globalTime = 0;
 let muted = false;
 let musicEnabled = true;
 let actx = null;
+let theme = 'night';
 
 const keys = Object.create(null);
 const mouse = { x: W * .5, y: H * .45, active: false };
@@ -123,7 +166,8 @@ if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-wi
 function resetGame() {
   player = {
     x: worldWidth * .5, y: 392, r: 20, hp: 100, maxHp: 100, speed: 236,
-    weapon: 'gun', ammo: 72, facing: 1, attackCd: 0, swing: 0, swingId: 0, swingHit: new Set(),
+    weapon: 'gun', inventory: defaultInventory.slice(), ammoByWeapon: { gun: 72 },
+    facing: 1, attackCd: 0, swing: 0, swingId: 0, swingHit: new Set(),
     invuln: .6, anim: 0, hurtFlash: 0, flash: 0, recoil: 0, step: 0, autoBackToGun: false
   };
   enemies = [];
@@ -131,6 +175,7 @@ function resetGame() {
   pickups = [];
   particles = [];
   texts = [];
+  crates = [];
   decals.length = 0;
   wave = 0;
   score = 0;
@@ -141,6 +186,9 @@ function resetGame() {
   waveBannerAt = 0;
   bossRef = null;
   shake = 0;
+  theme = 'night';
+  spawnCrates(8);
+  if (ui.exitInfo) ui.exitInfo.classList.add('hidden');
   cam.x = clamp(player.x - W * .5, 0, worldWidth - W);
   cam.y = cameraYTarget();
   state = 'playing';
@@ -157,7 +205,8 @@ function resetGame() {
 }
 
 function currentMusicMode() {
-  return wave > 0 && wave % 5 === 0 ? 'boss' : 'battle';
+  if (wave > 0 && wave % 5 === 0) return 'boss';
+  return theme === 'day' ? 'day' : 'battle';
 }
 
 function cameraYTarget() {
@@ -167,7 +216,8 @@ function cameraYTarget() {
 
 function startWave(n) {
   wave = n;
-  ui.bannerText.textContent = (wave % 5 === 0) ? `第 ${wave} 波 · BOSS 来袭` : `第 ${wave} 波`;
+  theme = n > 0 && (n % 6) >= 3 ? 'day' : 'night';
+  ui.bannerText.textContent = (wave % 5 === 0) ? `第 ${wave} 波 · BOSS 来袭` : (theme === 'day' ? `第 ${wave} 波 · 白天` : `第 ${wave} 波`);
   ui.banner.classList.remove('hidden');
   waveBannerAt = 1.8;
   spawnQueue = [];
@@ -176,21 +226,24 @@ function startWave(n) {
   for (let i = 0; i < total; i++) {
     const r = Math.random();
     if (wave < 2) spawnQueue.push('walker');
-    else if (r < .52) spawnQueue.push('walker');
-    else if (r < .82) spawnQueue.push('runner');
-    else spawnQueue.push('brute');
+    else if (r < .44) spawnQueue.push('walker');
+    else if (r < .70) spawnQueue.push('runner');
+    else if (r < .86) spawnQueue.push('brute');
+    else spawnQueue.push('spitter');
   }
   if (isBoss) {
     spawnQueue.push('boss');
     for (let i = 0; i < Math.min(6, 2 + Math.floor(wave / 5)); i++) spawnQueue.push(Math.random() < .6 ? 'runner' : 'walker');
+    if (wave >= 8) spawnQueue.push('spitter');
   }
   for (let i = spawnQueue.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [spawnQueue[i], spawnQueue[j]] = [spawnQueue[j], spawnQueue[i]];
   }
   spawnTimer = 1.0;
+  spawnCrates(Math.max(0, 7 + Math.floor(wave / 3) - crates.length), true);
   audio.wave();
-  music.setMode(isBoss ? 'boss' : 'battle', true);
+  music.setMode(isBoss ? 'boss' : (theme === 'day' ? 'day' : 'battle'), true);
   updateHud();
 }
 
@@ -211,12 +264,20 @@ function spawnOne(type) {
     walker: { hp: 58, speed: 64, dmg: 10, r: 22, score: 10, scale: 1, color: '#6f9e63' },
     runner: { hp: 34, speed: 138, dmg: 7, r: 17, score: 15, scale: .82, color: '#94b95a' },
     brute: { hp: 230, speed: 46, dmg: 20, r: 33, score: 38, scale: 1.42, color: '#4c7d55' },
+    spitter: { hp: 48, speed: 82, dmg: 8, r: 18, score: 24, scale: .9, color: '#8b7bd6', flying: true, shotCd: 1.4 },
     boss: { hp: 820 + wave * 160, speed: 54, dmg: 28, r: 58, score: 260, scale: 2.35, color: '#386b4b' }
   }[type];
   const z = Object.assign({
     type, x, y, maxHp: base.hp, hp: base.hp, attackCd: rand(.4, 1.1),
     phase: rand(0, 10), kx: 0, ky: 0, hurt: 0, dead: false, climbT: type === 'boss' ? 0 : rand(.55, 1.2)
   }, base);
+  if (type === 'spitter') {
+    x = cam.x + (Math.random() < .5 ? -80 : W + 80);
+    y = laneTop - 126 + rand(-22, 24);
+    z.x = x;
+    z.y = y;
+    z.shotTimer = rand(.7, 1.7);
+  }
   if (type === 'boss') {
     x = player.x + (player.facing > 0 ? -360 : 360);
     x = clamp(x, 120, worldWidth - 120);
@@ -229,19 +290,87 @@ function spawnOne(type) {
   enemies.push(z);
 }
 
+function spawnCrates(count, allowNearPlayer = false) {
+  for (let i = 0; i < count; i++) {
+    let x = rand(180, worldWidth - 180);
+    if (!allowNearPlayer && player && Math.abs(x - player.x) < 300) x = player.x + (x > player.x ? 300 : -300);
+    crates.push({
+      x: clamp(x, 150, worldWidth - 150),
+      y: rand(laneTop + 34, laneBottom - 22),
+      w: rand(48, 64),
+      h: rand(42, 56),
+      hp: 44,
+      maxHp: 44,
+      tilt: rand(-.16, .16),
+      hit: 0
+    });
+  }
+}
+
+function damageCrate(c, dmg) {
+  c.hp -= dmg;
+  c.hit = .12;
+  for (let i = 0; i < 6; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(70, 220);
+    particles.push({ x: c.x + rand(-18, 18), y: c.y - c.h * .5 + rand(-14, 14), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80, life: rand(.18, .36), max: .36, r: rand(2, 4), color: Math.random() < .7 ? '#b5793e' : '#6f4a28', g: 430 });
+  }
+  audio.crate();
+  if (c.hp <= 0) breakCrate(c);
+}
+
+function breakCrate(c) {
+  const idx = crates.indexOf(c);
+  if (idx < 0) return;
+  crates.splice(idx, 1);
+  score += 15;
+  addShake(3);
+  audio.crateBreak();
+  for (let i = 0; i < 26; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(90, 360);
+    particles.push({ x: c.x, y: c.y - c.h * .5, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 140, life: rand(.28, .62), max: .62, r: rand(2.5, 5), color: i % 4 ? '#b5793e' : '#ffd166', g: 420 });
+  }
+  const r = Math.random();
+  let kind = 'ammo';
+  if (r < .28) kind = 'health';
+  else if (r < .72) kind = 'ammo';
+  else {
+    const weaponRoll = Math.random();
+    kind = weaponRoll < .4 ? 'smg' : weaponRoll < .72 ? 'shotgun' : weaponRoll < .94 ? 'machete' : 'rifle';
+  }
+  spawnPickup(c.x, c.y - 6, kind);
+  texts.push({ x: c.x, y: c.y - 66, vy: -70, life: .95, max: .95, text: '补给箱已破坏', color: '#ffd166' });
+  updateHud();
+}
+
+function weaponAmmo(name = player ? player.weapon : 'gun') {
+  if (!player) return weapons[name].kind === 'melee' ? Infinity : 0;
+  const w = weapons[name];
+  if (!w) return 0;
+  if (w.kind === 'melee') return Infinity;
+  return Number.isFinite(player.ammoByWeapon[name] ?? 0) ? player.ammoByWeapon[name] : 0;
+}
+
+function removeDisposableWeapon(name = player.weapon) {
+  if (!player || !weapons[name] || !weapons[name].disposable) return false;
+  const idx = player.inventory.indexOf(name);
+  if (idx >= 0) player.inventory.splice(idx, 1);
+  player.ammoByWeapon[name] = 0;
+  return true;
+}
+
 function tryAttack() {
   if (state !== 'playing' || player.attackCd > 0) return;
   const w = weapons[player.weapon];
   const aim = currentAim();
   player.facing = Math.cos(aim) >= 0 ? 1 : -1;
-  if (player.weapon === 'melee') {
+  if (w.kind === 'melee') {
     player.attackCd = w.cooldown;
-    player.swing = .24;
+    player.swing = w.name === '开山刀' ? .17 : .24;
     player.swingId++;
     player.swingHit = new Set();
     const ox = player.x;
     const oy = player.y - 39;
-    audio.swing();
+    audio.swing(w.name === '开山刀' ? 860 : 720);
     for (const z of enemies) {
       if (z.dead || player.swingHit.has(z)) continue;
       const dx = z.x - ox, dy = z.y - 34 - oy;
@@ -252,37 +381,63 @@ function tryAttack() {
         player.swingHit.add(z);
       }
     }
+    for (const c of crates) {
+      const dx = c.x - ox, dy = c.y - c.h * .5 - oy;
+      const d = Math.hypot(dx, dy);
+      const a = Math.atan2(dy, dx);
+      if (d <= w.range + c.w * .55 && angleDiff(a, aim) <= w.arc * .5 + .15) damageCrate(c, w.damage);
+    }
     for (let i = 0; i < 10; i++) {
       const sp = rand(120, 320), a = aim + rand(-.6, .6);
       particles.push({ x: ox + Math.cos(aim) * 40, y: oy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: rand(.16, .34), max: .34, r: rand(2, 4), color: '#d8dde6', g: 260 });
     }
+    if (w.disposable) {
+      const uses = Math.max(0, Number(player.ammoByWeapon[player.weapon] || 0) - 1);
+      player.ammoByWeapon[player.weapon] = uses;
+      if (uses <= 0) {
+        texts.push({ x: player.x, y: player.y - 96, vy: -58, life: 1.1, max: 1.1, text: `${w.name} 已损坏`, color: '#ffd166' });
+        removeDisposableWeapon(player.weapon);
+        selectWeapon(player.ammoByWeapon.gun > 0 ? 'gun' : 'melee', false);
+      }
+    }
   } else {
-    if (player.ammo < w.ammoUse) {
+    const ammo = weaponAmmo(player.weapon);
+    if (ammo < w.ammoUse) {
       player.attackCd = .22;
       audio.dry();
-      player.weapon = 'melee';
-      player.autoBackToGun = true;
-      texts.push({ x: player.x, y: player.y - 96, vy: -58, life: 1.1, max: 1.1, text: '子弹耗尽 · 已切换球棍', color: '#ffd166' });
+      if (w.disposable) {
+        texts.push({ x: player.x, y: player.y - 96, vy: -58, life: 1.1, max: 1.1, text: `${w.name} 子弹耗尽`, color: '#ffd166' });
+        removeDisposableWeapon(player.weapon);
+        selectWeapon(player.ammoByWeapon.gun > 0 ? 'gun' : 'melee', false);
+      } else {
+        player.weapon = 'melee';
+        player.autoBackToGun = true;
+        texts.push({ x: player.x, y: player.y - 96, vy: -58, life: 1.1, max: 1.1, text: '子弹耗尽 · 已切换球棍', color: '#ffd166' });
+      }
       updateHud();
       return;
     }
     player.autoBackToGun = false;
     player.attackCd = w.cooldown;
-    player.ammo -= w.ammoUse;
+    player.ammoByWeapon[player.weapon] = ammo - w.ammoUse;
+    if (player.weapon === 'gun') player.ammo = player.ammoByWeapon.gun;
     player.flash = .06;
     player.recoil = 1;
-    addShake(2.4);
-    audio.bang();
-    const spread = rand(-w.spread, w.spread);
-    const a = aim + spread;
+    addShake(w.pellets > 1 ? 4.6 : 2.4);
+    audio.bang(w.pellets > 1 ? 'shotgun' : w.name === '步枪' ? 'rifle' : 'gun');
+    const shots = w.pellets || 1;
     const mx = player.x + Math.cos(aim) * 24;
     const my = player.y - 62 + Math.sin(aim) * 24;
-    bullets.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(a) * w.bulletSpeed, vy: Math.sin(a) * w.bulletSpeed, life: 1.0, dmg: w.damage, knock: w.knock });
+    for (let s = 0; s < shots; s++) {
+      const spread = rand(-w.spread, w.spread);
+      const a = aim + spread;
+      bullets.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(a) * w.bulletSpeed, vy: Math.sin(a) * w.bulletSpeed, life: w.name === '步枪' ? 1.35 : 1.0, dmg: w.damage, knock: w.knock, color: w.color, friendly: true });
+    }
     for (let i = 0; i < 7; i++) {
       const sp = rand(70, 220), aa = aim + rand(-.38, .38);
       particles.push({ x: mx, y: my, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: rand(.08, .18), max: .18, r: rand(1.5, 3), color: i ? '#ffcf72' : '#fff2b8', g: 40 });
     }
-    particles.push({ x: player.x - player.facing * 16, y: player.y - 28, vx: -player.facing * rand(40, 90), vy: -rand(30, 90), life: .5, max: .5, r: 3.2, color: '#d8b25a', g: 500, casing: true });
+    if (w.name !== '冲锋枪') particles.push({ x: player.x - player.facing * 16, y: player.y - 28, vx: -player.facing * rand(40, 90), vy: -rand(30, 90), life: .5, max: .5, r: 3.2, color: '#d8b25a', g: 500, casing: true });
     updateHud();
   }
 }
@@ -419,17 +574,47 @@ function updateBullets(dt) {
     b.x += b.vx * dt; b.y += b.vy * dt;
     b.life -= dt;
     let hit = false;
-    for (const z of enemies) {
-      if (z.dead) continue;
-      const hitR = z.r + 10;
-      if (segmentCircle(b.px, b.py, b.x, b.y, z.x, z.y - z.r * .55, hitR)) {
-        damageZombie(z, b.dmg, Math.atan2(b.vy, b.vx), weapons.gun.knock);
+    if (b.enemy) {
+      const pr = player.r + 8;
+      if (state === 'playing' && player.invuln <= 0 && segmentCircle(b.px, b.py, b.x, b.y, player.x, player.y - 30, pr)) {
+        player.hp -= b.dmg;
+        player.invuln = .62;
+        player.hurtFlash = .26;
+        player.knockX = Math.sign(b.vx) * Math.abs(b.knock || 90);
+        player.knockY = -70;
+        addShake(5);
+        audio.hurt();
+        updateHud();
         hit = true;
-        break;
+      }
+    } else {
+      for (const c of crates) {
+        if (segmentRect(b.px, b.py, b.x, b.y, c.x - c.w / 2, c.y - c.h * .75, c.w, c.h)) {
+          damageCrate(c, b.dmg);
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) for (const z of enemies) {
+        if (z.dead) continue;
+        const hitR = z.r + 10;
+        if (segmentCircle(b.px, b.py, b.x, b.y, z.x, z.y - z.r * .55, hitR)) {
+          damageZombie(z, b.dmg, Math.atan2(b.vy, b.vx), b.knock || weapons.gun.knock);
+          hit = true;
+          break;
+        }
       }
     }
-    if (hit || b.life <= 0 || b.x < cam.x - 120 || b.x > cam.x + W + 120 || b.y < -120 || b.y > H + 160) bullets.splice(i, 1);
+    if (hit || b.life <= 0 || b.x < cam.x - 120 || b.x > cam.x + W + 120 || b.y < -160 || b.y > H + 180) bullets.splice(i, 1);
   }
+}
+
+function segmentRect(x0, y0, x1, y1, rx, ry, rw, rh) {
+  return segmentCircle(x0, y0, x1, y1, rx, ry, 0) ||
+    segmentCircle(x0, y0, x1, y1, rx + rw, ry, 0) ||
+    segmentCircle(x0, y0, x1, y1, rx, ry + rh, 0) ||
+    segmentCircle(x0, y0, x1, y1, rx + rw, ry + rh, 0) ||
+    segmentCircle(x0, y0, x1, y1, rx + rw * .5, ry + rh * .5, Math.min(rw, rh) * .5);
 }
 
 function updateEnemies(dt) {
@@ -445,6 +630,26 @@ function updateEnemies(dt) {
     const dx = player.x - z.x;
     const dy = player.y - 4 - z.y;
     const d = Math.hypot(dx, dy) || 1;
+    if (z.flying) {
+      const hoverY = laneTop - 128 + Math.sin(z.phase) * 32;
+      const dirX = Math.abs(dx) < 250 ? -Math.sign(dx) : Math.abs(dx) > 520 ? Math.sign(dx) : 0;
+      z.x += dirX * z.speed * dt;
+      z.y += (hoverY - z.y) * 3 * dt;
+      z.x += z.kx * dt;
+      z.y += z.ky * dt;
+      z.x = clamp(z.x, cam.x - 260, cam.x + W + 260);
+      z.y = clamp(z.y, laneTop - 186, laneTop - 54);
+      z.shotTimer = Math.max(0, z.shotTimer - dt);
+      if (z.shotTimer <= 0 && Math.abs(dx) < 620) {
+        z.shotTimer = rand(1.25, 2.25);
+        const ax = z.x, ay = z.y - 20;
+        const a = Math.atan2(player.y - 32 - ay, player.x - ax);
+        const sp = 560;
+        bullets.push({ x: ax, y: ay, px: ax, py: ay, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1.75, dmg: z.dmg, knock: 120, enemy: true, color: '#9dff66' });
+        audio.spit();
+      }
+      continue;
+    }
     if (z.climbT > 0) {
       z.climbT -= dt;
       z.y += clamp((player.y - 8 - z.y) * 2.2 * dt, -260 * dt, 260 * dt);
@@ -487,22 +692,33 @@ function updatePickups(dt) {
     const p = pickups[i];
     p.bob += dt * 5;
     p.life -= dt;
-    const r = 28;
+    const r = 30;
     if (p.life <= 0 || dist2(p.x, p.y - 18, player.x, player.y - 22) <= r * r) {
       if (p.life > 0) {
         if (p.kind === 'health') {
           player.hp = Math.min(player.maxHp, player.hp + 28);
           texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .9, max: .9, text: '+28 HP', color: '#7ee081' });
-        } else {
-          player.ammo += 36;
+        } else if (weapons[p.kind]) {
+          const w = weapons[p.kind];
+          const currentName = player.weapon;
+          if (currentName !== p.kind && weapons[currentName] && weapons[currentName].disposable) removeDisposableWeapon(currentName);
+          if (!player.inventory.includes(p.kind)) player.inventory.push(p.kind);
+          player.ammoByWeapon[p.kind] = w.kind === 'melee' ? (w.pickupUses || 1) : (w.pickupAmmo || 1);
+          player.weapon = p.kind;
+          player.swing = 0;
+          texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .95, max: .95, text: w.disposable ? `获得 ${w.name}（补给）` : `获得 ${w.name}`, color: w.disposable ? '#ffd166' : '#62a8ff' });
+          audio.weaponPick();
+        } else if (p.kind === 'ammo') {
+          player.ammoByWeapon.gun = (player.ammoByWeapon.gun || 0) + 36;
+          player.ammo = player.ammoByWeapon.gun;
           if (player.weapon === 'melee' && player.autoBackToGun) {
             player.weapon = 'gun';
             player.autoBackToGun = false;
             texts.push({ x: player.x, y: player.y - 112, vy: -58, life: 1.0, max: 1.0, text: '已恢复手枪', color: '#62a8ff' });
           }
-          texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .9, max: .9, text: '+36 子弹', color: '#ffd166' });
+          texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .9, max: .9, text: '+36 手枪子弹', color: '#ffd166' });
         }
-        audio.pickup();
+        if (p.kind === 'health' || p.kind === 'ammo') audio.pickup();
         updateHud();
       }
       pickups.splice(i, 1);
@@ -549,8 +765,14 @@ function gameOver() {
 function updateHud() {
   ui.hpFill.style.width = `${clamp(player ? player.hp / player.maxHp * 100 : 100, 0, 100)}%`;
   const w = player ? weapons[player.weapon] : null;
-  ui.weaponName.textContent = w ? w.name : '球棍';
-  ui.ammoText.textContent = player ? (player.weapon === 'gun' ? `子弹 ${player.ammo}` : '近战 · 无限耐久') : '子弹 ∞';
+  ui.weaponName.textContent = w ? `${w.name}${w.disposable ? ' · 补给' : ''}` : '球棍';
+  if (!player || !w) ui.ammoText.textContent = '子弹 ∞';
+  else if (w.kind === 'melee' && w.infinite) ui.ammoText.textContent = '近战 · 无限耐久';
+  else if (w.kind === 'melee') ui.ammoText.textContent = `耐久 ${Math.max(0, Math.round(player.ammoByWeapon[player.weapon] || 0))}`;
+  else {
+    const ammo = Math.round(weaponAmmo(player.weapon));
+    ui.ammoText.textContent = ammo === 0 && w.disposable ? '补给武器 · 已耗尽' : `子弹 ${ammo}`;
+  }
   ui.waveText.textContent = Math.max(0, wave);
   ui.scoreText.textContent = score;
   ui.killText.textContent = kills;
@@ -568,6 +790,7 @@ function render() {
   ctx.translate(-cam.x, -cam.y);
   drawGround();
   drawStreetItems();
+  drawCrates();
   drawDecals();
   drawPickups();
   const sorted = enemies.slice().sort((a, b) => a.y - b.y);
@@ -583,26 +806,51 @@ function render() {
 
 function drawSky() {
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#101726');
-  g.addColorStop(.42, '#26253a');
-  g.addColorStop(.72, '#5a3540');
-  g.addColorStop(1, '#2c232c');
+  if (theme === 'day') {
+    g.addColorStop(0, '#58a9ff');
+    g.addColorStop(.36, '#8fd4ff');
+    g.addColorStop(.72, '#d9f2ff');
+    g.addColorStop(1, '#b6d8e8');
+  } else {
+    g.addColorStop(0, '#101726');
+    g.addColorStop(.42, '#26253a');
+    g.addColorStop(.72, '#5a3540');
+    g.addColorStop(1, '#2c232c');
+  }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   ctx.save();
-  ctx.globalAlpha = .8;
-  ctx.fillStyle = '#f2dd9b';
-  const moonX = W * .78 - cam.x * .02, moonY = H * .18;
-  ctx.beginPath(); ctx.arc(moonX, moonY, 38, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = .16;
-  ctx.beginPath(); ctx.arc(moonX + 12, moonY - 8, 54, 0, Math.PI * 2); ctx.fill();
+  if (theme === 'day') {
+    const sunX = W * .74 - cam.x * .04, sunY = H * .18;
+    ctx.globalAlpha = .9;
+    ctx.fillStyle = '#fff3a8';
+    ctx.beginPath(); ctx.arc(sunX, sunY, 46, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .24;
+    ctx.fillStyle = '#fff7c4';
+    ctx.beginPath(); ctx.arc(sunX, sunY, 82, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.62)';
+    for (let i = 0; i < 5; i++) {
+      const cx = ((i * 241 - cam.x * .06) % W + W) % W;
+      const cy = 48 + (i % 3) * 44;
+      ctx.beginPath(); ctx.ellipse(cx, cy, 82, 19, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  } else {
+    ctx.globalAlpha = .8;
+    ctx.fillStyle = '#f2dd9b';
+    const moonX = W * .78 - cam.x * .02, moonY = H * .18;
+    ctx.beginPath(); ctx.arc(moonX, moonY, 38, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .16;
+    ctx.beginPath(); ctx.arc(moonX + 12, moonY - 8, 54, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.restore();
-  for (let i = 0; i < 34; i++) {
-    const x = ((i * 173 - cam.x * .06) % W + W) % W;
-    const y = ((i * 91 + 34) % (laneTop - 50)) + 12;
-    ctx.globalAlpha = .18 + ((i % 5) / 10);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(x, y, 2, 2);
+  if (theme !== 'day') {
+    for (let i = 0; i < 34; i++) {
+      const x = ((i * 173 - cam.x * .06) % W + W) % W;
+      const y = ((i * 91 + 34) % (laneTop - 50)) + 12;
+      ctx.globalAlpha = .18 + ((i % 5) / 10);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x, y, 2, 2);
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -612,9 +860,11 @@ function drawFarCity() {
   ctx.translate(-cam.x * .28, cam.y * .35 + 8);
   for (const b of farLayer) {
     if (b.x + b.w < cam.x * .28 - 120 || b.x > cam.x * .28 + W + 120) continue;
-    ctx.fillStyle = `rgba(${28 + Math.floor(b.tone * 18)},${31 + Math.floor(b.tone * 18)},${48},.72)`;
+    ctx.fillStyle = theme === 'day'
+      ? `rgba(${104 + Math.floor(b.tone * 26)},${122 + Math.floor(b.tone * 22)},${152},.82)`
+      : `rgba(${28 + Math.floor(b.tone * 18)},${31 + Math.floor(b.tone * 18)},${48},.72)`;
     ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = 'rgba(255,214,120,.15)';
+    ctx.fillStyle = theme === 'day' ? 'rgba(255,255,255,.36)' : 'rgba(255,214,120,.15)';
     for (let i = 0; i < b.wins; i++) {
       const wx = b.x + 8 + ((i * 29) % Math.max(8, b.w - 20));
       const wy = b.y + 12 + ((i * 37) % Math.max(10, b.h - 30));
@@ -629,9 +879,9 @@ function drawNearCity() {
   ctx.translate(-cam.x * .58, cam.y * .78 - 18);
   for (const b of nearLayer) {
     if (b.x + b.w < cam.x * .58 - 160 || b.x > cam.x * .58 + W + 160) continue;
-    ctx.fillStyle = '#151a25';
+    ctx.fillStyle = theme === 'day' ? '#9eabb8' : '#151a25';
     ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = 'rgba(255,184,92,.16)';
+    ctx.fillStyle = theme === 'day' ? 'rgba(255,255,255,.5)' : 'rgba(255,184,92,.16)';
     const rows = Math.floor(b.h / 34), cols = Math.max(2, Math.floor(b.w / 34));
     for (let i = 0; i < rows * cols; i++) {
       const wx = b.x + 12 + (i % cols) * 30;
@@ -647,14 +897,20 @@ function drawNearCity() {
 function drawGround() {
   const x0 = cam.x - 120, w = W + 240;
   const g = ctx.createLinearGradient(0, laneTop - 60, 0, laneBottom + 90);
-  g.addColorStop(0, '#161b26');
-  g.addColorStop(.45, '#232433');
-  g.addColorStop(1, '#141722');
+  if (theme === 'day') {
+    g.addColorStop(0, '#8aa06b');
+    g.addColorStop(.45, '#a7b86d');
+    g.addColorStop(1, '#7d9262');
+  } else {
+    g.addColorStop(0, '#161b26');
+    g.addColorStop(.45, '#232433');
+    g.addColorStop(1, '#141722');
+  }
   ctx.fillStyle = g;
   ctx.fillRect(x0, laneTop - 40, w, laneBottom - laneTop + 150);
   ctx.fillStyle = 'rgba(255,255,255,.05)';
   ctx.fillRect(x0, laneTop, w, 4);
-  ctx.fillStyle = 'rgba(126,224,129,.16)';
+  ctx.fillStyle = theme === 'day' ? 'rgba(74,128,79,.24)' : 'rgba(126,224,129,.16)';
   for (let x = Math.floor((cam.x - 120) / 180) * 180; x < cam.x + W + 120; x += 180) {
     rr(ctx, x + 14, laneTop + 6 + ((x / 180) % 2) * 150, 64, 14, 6);
     ctx.fill();
@@ -689,6 +945,35 @@ function drawStreetItems() {
   }
 }
 
+function drawCrates() {
+  for (const c of crates) {
+    if (c.x < cam.x - 90 || c.x > cam.x + W + 90) continue;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.tilt * .12);
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.beginPath(); ctx.ellipse(0, c.h * .5, c.w * .62, c.h * .26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.translate(0, -c.h * .22);
+    ctx.fillStyle = c.hit > 0 ? '#e4b574' : '#a86638';
+    rr(ctx, -c.w / 2, -c.h / 2, c.w, c.h, 6); ctx.fill();
+    ctx.strokeStyle = '#6b3f25';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h);
+    ctx.beginPath(); ctx.moveTo(-c.w / 2, 0); ctx.lineTo(c.w / 2, 0); ctx.moveTo(0, -c.h / 2); ctx.lineTo(0, c.h / 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,209,102,.78)';
+    rr(ctx, -c.w * .22, -c.h * .2, c.w * .44, c.h * .4, 4); ctx.fill();
+    ctx.restore();
+    if (c.hp < c.maxHp) {
+      const bw = c.w * .72;
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      rr(ctx, c.x - bw / 2, c.y - c.h * .72, bw, 5, 2); ctx.fill();
+      ctx.fillStyle = c.hp / c.maxHp > .5 ? '#7ee081' : '#ffd166';
+      rr(ctx, c.x - bw / 2 + 1, c.y - c.h * .72 + 1, (bw - 2) * clamp(c.hp / c.maxHp, 0, 1), 3, 1.5); ctx.fill();
+    }
+    c.hit = Math.max(0, c.hit - .016);
+  }
+}
+
 function drawDecals() {
   for (const d of decals) {
     if (d.x < cam.x - 90 || d.x > cam.x + W + 90) continue;
@@ -717,6 +1002,29 @@ function drawPickups() {
       rr(ctx, -14, -8, 28, 20, 6); ctx.fill();
       ctx.fillStyle = '#e63b3b';
       ctx.fillRect(-4, -3, 8, 10); ctx.fillRect(-8, 1, 16, 4);
+    } else if (weapons[p.kind]) {
+      const w = weapons[p.kind];
+      ctx.fillStyle = '#252b36';
+      rr(ctx, -17, -11, 36, 24, 6); ctx.fill();
+      ctx.strokeStyle = w.color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-14, -8, 30, 18);
+      ctx.fillStyle = w.color;
+      if (w.kind === 'melee') {
+        ctx.save(); ctx.rotate(-.35);
+        ctx.fillRect(-12, -3, 26, 7);
+        ctx.restore();
+      } else {
+        ctx.save(); ctx.rotate(.12);
+        ctx.fillRect(-10, -3, 24, 6);
+        ctx.fillStyle = '#151a23';
+        ctx.fillRect(10, -5, 5, 10);
+        ctx.restore();
+      }
+      ctx.fillStyle = '#fff';
+      ctx.font = '900 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(w.short, -2, -15);
     } else {
       ctx.fillStyle = '#252b36';
       rr(ctx, -16, -10, 34, 22, 5); ctx.fill();
@@ -738,6 +1046,18 @@ function drawZombie(z) {
   ctx.translate(x, y);
   ctx.fillStyle = 'rgba(0,0,0,.34)';
   ctx.beginPath(); ctx.ellipse(0, 2, z.r * 1.05, z.r * .36, 0, 0, Math.PI * 2); ctx.fill();
+  if (z.flying) {
+    const flap = Math.sin(z.phase * 3.5) * 12;
+    ctx.save();
+    ctx.fillStyle = z.hurt > 0 ? '#ffd0cb' : '#6d5cc4';
+    ctx.beginPath();
+    ctx.moveTo(-8, -z.r * .9); ctx.quadraticCurveTo(-z.r * 2.2, -z.r * 1.5 - flap, -z.r * 1.9, -z.r * .2); ctx.quadraticCurveTo(-z.r * 1.2, -z.r * .7, -8, -z.r * .9); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(8, -z.r * .9); ctx.quadraticCurveTo(z.r * 2.2, -z.r * 1.5 - flap, z.r * 1.9, -z.r * .2); ctx.quadraticCurveTo(z.r * 1.2, -z.r * .7, 8, -z.r * .9); ctx.fill();
+    ctx.fillStyle = '#c7f28a';
+    ctx.beginPath(); ctx.arc(0, -z.r * 1.35, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   ctx.scale(z.scale, z.scale);
   const bodyH = z.r * 1.5;
   ctx.translate(0, -bodyH * .5);
@@ -842,27 +1162,33 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(shoulderX, shoulderY);
   ctx.rotate(aim);
-  if (player.weapon === 'gun') {
+  if (w.kind === 'gun') {
+    const barrel = w.name === '霰弹枪' ? 48 : w.name === '步枪' ? 62 : 38;
     ctx.fillStyle = '#20242d';
-    rr(ctx, 2, -7, 38, 9, 3); ctx.fill();
+    rr(ctx, 2, -7, barrel, w.name === '霰弹枪' ? 12 : 9, 3); ctx.fill();
     ctx.fillStyle = '#111419';
-    rr(ctx, 5, 0, 12, 12, 3); ctx.fill();
-    ctx.fillStyle = '#3a404b';
-    rr(ctx, 31, -11, 10, 7, 2); ctx.fill();
+    rr(ctx, 5, 0, 12, 13, 3); ctx.fill();
+    ctx.fillStyle = w.color;
+    rr(ctx, 30, -11, 10, 7, 2); ctx.fill();
+    if (w.name === '步枪') {
+      ctx.strokeStyle = '#151922';
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(14, 6); ctx.lineTo(48, 6); ctx.stroke();
+    }
     if (player.flash > 0) {
       ctx.fillStyle = '#fff0a8';
       ctx.beginPath();
-      ctx.moveTo(42, -9); ctx.lineTo(63, -3); ctx.lineTo(42, 3); ctx.closePath(); ctx.fill();
+      ctx.moveTo(barrel + 4, -9); ctx.lineTo(barrel + 25, -3); ctx.lineTo(barrel + 4, 3); ctx.closePath(); ctx.fill();
     }
   } else {
     const sw = player.swing > 0 ? player.swing / .24 : 0;
     ctx.rotate(-((1 - sw) * .9));
     ctx.fillStyle = '#8b5a2b';
     rr(ctx, 4, -5, 34, 10, 5); ctx.fill();
-    ctx.fillStyle = '#d9d9df';
-    rr(ctx, 30, -8, 26, 16, 7); ctx.fill();
-    ctx.fillStyle = '#a8a9ad';
-    rr(ctx, 33, -5, 19, 10, 5); ctx.fill();
+    ctx.fillStyle = w.color || '#d9d9df';
+    rr(ctx, 30, -8, w.name === '开山刀' ? 36 : 26, 16, w.name === '开山刀' ? 4 : 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.36)';
+    rr(ctx, 34, -6, 16, 4, 2); ctx.fill();
   }
   ctx.restore();
   if (player.swing > 0 && player.weapon === 'melee') {
@@ -899,13 +1225,15 @@ function drawBullets() {
   ctx.save();
   ctx.lineCap = 'round';
   for (const b of bullets) {
-    ctx.strokeStyle = 'rgba(255,224,138,.22)';
+    const col = b.color || (b.enemy ? '#9dff66' : '#fff6c8');
+    const glow = b.enemy ? 'rgba(120,255,90,.22)' : 'rgba(255,224,138,.22)';
+    ctx.strokeStyle = glow;
     ctx.lineWidth = 6;
     ctx.beginPath(); ctx.moveTo(b.px, b.py); ctx.lineTo(b.x, b.y); ctx.stroke();
-    ctx.strokeStyle = '#fff6c8';
+    ctx.strokeStyle = col;
     ctx.lineWidth = 2.4;
     ctx.beginPath(); ctx.moveTo(b.px, b.py); ctx.lineTo(b.x, b.y); ctx.stroke();
-    ctx.fillStyle = '#fff1a6';
+    ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
@@ -956,9 +1284,10 @@ function drawCrosshair() {
 }
 
 function drawVignette() {
+  const day = theme === 'day';
   const g = ctx.createRadialGradient(W / 2, H * .52, H * .34, W / 2, H * .52, H * .78);
   g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,.42)');
+  g.addColorStop(1, day ? 'rgba(20,30,40,.16)' : 'rgba(0,0,0,.42)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   if (player && player.hurtFlash > 0) {
@@ -983,20 +1312,29 @@ const audio = {
     const t = ac.currentTime + delay;
     const o = ac.createOscillator();
     const g = ac.createGain();
+    const scaled = Math.max(.0001, gain * settings.sfx * settings.master);
     o.type = type;
     o.frequency.setValueAtTime(freq, t);
     if (slideTo !== null) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(scaled, t);
     g.gain.exponentialRampToValueAtTime(.0001, t + dur);
     o.connect(g).connect(ac.destination);
     o.start(t); o.stop(t + dur + .02);
   },
-  bang() { this.tone(175, .09, 'square', .10, 72); this.tone(520, .05, 'sawtooth', .05, 120); },
-  swing() { this.tone(720, .07, 'sine', .05, 210); },
+  bang(mode = 'gun') {
+    if (mode === 'shotgun') { this.tone(115, .13, 'square', .13, 48); this.tone(430, .07, 'sawtooth', .07, 110); }
+    else if (mode === 'rifle') { this.tone(155, .17, 'square', .13, 56); this.tone(680, .06, 'sawtooth', .06, 210); }
+    else { this.tone(175, .09, 'square', .10, 72); this.tone(520, .05, 'sawtooth', .05, 120); }
+  },
+  swing(freq = 720) { this.tone(freq, .07, 'sine', .05, freq * .3); },
   hit() { this.tone(205, .10, 'triangle', .08, 92); this.tone(95, .10, 'sine', .06, 55); },
   hurt() { this.tone(150, .18, 'sawtooth', .10, 64); },
   dry() { this.tone(120, .06, 'square', .05, 90); },
+  spit() { this.tone(520, .12, 'sawtooth', .05, 210); this.tone(210, .12, 'square', .035, 110, .04); },
+  crate() { this.tone(180 + Math.random() * 80, .06, 'square', .05, 120); },
+  crateBreak() { this.tone(95, .16, 'square', .09, 52); this.tone(180, .13, 'sawtooth', .05, 90, .04); },
   pickup() { this.tone(520, .08, 'sine', .06, 760); this.tone(760, .10, 'sine', .05, 980, .07); },
+  weaponPick() { this.tone(560, .08, 'square', .05, 760); this.tone(840, .10, 'triangle', .05, 1120, .06); },
   wave() { this.tone(430, .12, 'triangle', .07, 540); this.tone(620, .13, 'triangle', .06, 720, .10); },
   bossDown() { this.tone(120, .45, 'sawtooth', .11, 54); this.tone(300, .35, 'square', .07, 90, .12); },
   gameover() { this.tone(340, .25, 'triangle', .09, 220); this.tone(240, .35, 'triangle', .08, 130, .18); this.tone(110, .55, 'sawtooth', .08, 60, .38); }
@@ -1022,15 +1360,25 @@ const music = (() => {
     { root: 48, intervals: [0, 4, 7] },
     { root: 55, intervals: [0, 4, 7] }
   ];
+  const dayChords = [
+    { root: 60, intervals: [0, 4, 7] },
+    { root: 55, intervals: [0, 4, 7] },
+    { root: 62, intervals: [0, 4, 7] },
+    { root: 57, intervals: [0, 4, 7] }
+  ];
   const modeConfig = {
-    menu: { bpm: 102, filter: 1300, gain: .10 },
-    battle: { bpm: 126, filter: 2300, gain: .17 },
-    boss: { bpm: 144, filter: 3200, gain: .21 },
-    dead: { bpm: 92, filter: 900, gain: .12 }
+    menu: { bpm: 104, filter: 1300, gain: .15 },
+    battle: { bpm: 128, filter: 2400, gain: .24 },
+    day: { bpm: 136, filter: 3100, gain: .28 },
+    boss: { bpm: 148, filter: 3300, gain: .29 },
+    dead: { bpm: 92, filter: 900, gain: .16 }
   };
 
   function midiToFreq(n) { return 440 * Math.pow(2, (n - 69) / 12); }
-  function currentChord() { return chords[Math.floor(step / 16) % chords.length]; }
+  function currentChord() {
+    const set = mode === 'day' ? dayChords : chords;
+    return set[Math.floor(step / 16) % set.length];
+  }
   function reloadArp() {
     const tones = [0, 1, 2, 3, 2, 0];
     arpPattern = [];
@@ -1065,7 +1413,8 @@ const music = (() => {
 
   function targetGain() {
     if (muted || !musicEnabled || !ready) return 0;
-    return (modeConfig[mode] || modeConfig.battle).gain;
+    const base = (modeConfig[mode] || modeConfig.battle).gain;
+    return clamp(base * settings.music * settings.master, 0, .55);
   }
 
   function apply(fade = .35) {
@@ -1328,8 +1677,11 @@ addEventListener('keydown', e => {
   audio.ctx();
   if (e.code === 'Space' || e.code === 'KeyJ') input.attack = true;
   if (e.code === 'KeyQ') switchWeapon();
-  if (e.code === 'Digit1') selectWeapon('melee');
-  if (e.code === 'Digit2') selectWeapon('gun');
+  if (e.code.startsWith('Digit')) {
+    const slot = Number(e.code.slice(5));
+    const name = player && player.inventory[slot - 1];
+    if (name) selectWeapon(name, true);
+  }
   if (e.code === 'KeyP') togglePause();
   if (e.code === 'KeyR' && state === 'dead') resetGame();
   if (e.code === 'KeyM') toggleMute();
@@ -1346,24 +1698,80 @@ document.getElementById('restartBtn').addEventListener('click', resetGame);
 document.getElementById('resumeBtn').addEventListener('click', togglePause);
 document.getElementById('menuBtn').addEventListener('click', showMenu);
 document.getElementById('switchBtn').addEventListener('click', switchWeapon);
+ui.settingsBtn.addEventListener('click', resetSettings);
+ui.exitBtn.addEventListener('click', exitGame);
+ui.masterVolume.addEventListener('input', () => applySettingChange('master', Number(ui.masterVolume.value)));
+ui.musicVolume.addEventListener('input', () => applySettingChange('music', Number(ui.musicVolume.value)));
+ui.sfxVolume.addEventListener('input', () => applySettingChange('sfx', Number(ui.sfxVolume.value)));
+ui.pauseMusicToggle.addEventListener('change', () => { if (ui.pauseMusicToggle.checked !== musicEnabled) toggleMusic(); });
+ui.pauseSfxToggle.addEventListener('change', () => { if (ui.pauseSfxToggle.checked !== !muted) toggleMute(); });
+
+function syncSettingsUI() {
+  ui.masterVolume.value = Math.round(settings.master * 100);
+  ui.masterVolumeText.textContent = `${Math.round(settings.master * 100)}%`;
+  ui.musicVolume.value = Math.round(settings.music * 100);
+  ui.musicVolumeText.textContent = `${Math.round(settings.music * 100)}%`;
+  ui.sfxVolume.value = Math.round(settings.sfx * 100);
+  ui.sfxVolumeText.textContent = `${Math.round(settings.sfx * 100)}%`;
+  ui.pauseMusicToggle.checked = musicEnabled;
+  ui.pauseSfxToggle.checked = !muted;
+}
+
+function applySettingChange(key, value) {
+  settings[key] = clamp(value / 100, 0, 1);
+  saveSettings();
+  syncSettingsUI();
+  music.apply(.12);
+}
+
+function resetSettings() {
+  settings.master = .9;
+  settings.music = .95;
+  settings.sfx = .9;
+  saveSettings();
+  syncSettingsUI();
+  music.apply(.15);
+  texts.push({ x: player ? player.x : W * .5, y: player ? player.y - 90 : H * .5, vy: -50, life: .9, max: .9, text: '音量设置已重置', color: '#9aa6b8' });
+}
+
+function exitGame() {
+  if (ui.exitInfo) ui.exitInfo.classList.remove('hidden');
+  showMenu();
+  try {
+    window.open('', '_self');
+    window.close();
+  } catch (err) { /* 浏览器禁止关闭时返回标题 */ }
+}
 
 function switchWeapon() {
   if (state !== 'playing') return;
-  selectWeapon(player.weapon === 'gun' ? 'melee' : 'gun');
+  const inv = player.inventory.filter(name => weapons[name]);
+  if (!inv.length) return;
+  const idx = inv.indexOf(player.weapon);
+  const next = inv[(idx + 1 + inv.length) % inv.length] || inv[0];
+  if (next !== player.weapon) selectWeapon(next, true);
+  else updateHud();
 }
 
-function selectWeapon(name) {
+function selectWeapon(name, removeCurrentDisposable = true) {
   if (state !== 'playing') return;
   if (!weapons[name]) return;
+  if (!player.inventory.includes(name)) return;
+  if (removeCurrentDisposable && player.weapon !== name && weapons[player.weapon] && weapons[player.weapon].disposable) {
+    const old = player.weapon;
+    removeDisposableWeapon(old);
+    texts.push({ x: player.x, y: player.y - 112, vy: -58, life: 1.0, max: 1.0, text: `${weapons[old].name} 已丢弃`, color: '#9aa6b8' });
+  }
   player.weapon = name;
-  if (name === 'gun') player.autoBackToGun = false;
   player.swing = 0;
+  if (name === 'gun') player.autoBackToGun = false;
   updateHud();
 }
 
 function togglePause() {
   if (state === 'playing') {
     state = 'paused';
+    syncSettingsUI();
     ui.pause.classList.remove('hidden');
     music.stop(.25);
   } else if (state === 'paused') {
@@ -1380,6 +1788,7 @@ function toggleMute() {
   if (muted) music.stop(.2);
   else if (state === 'playing' && musicEnabled) music.setMode(currentMusicMode(), true);
   else music.apply(.2);
+  syncSettingsUI();
 }
 
 function toggleMusic() {
@@ -1388,6 +1797,7 @@ function toggleMusic() {
   if (!musicEnabled) music.stop(.25);
   else if (state === 'playing') music.setMode(currentMusicMode(), true);
   else if (actx) music.setMode('menu', true);
+  syncSettingsUI();
 }
 
 function showMenu() {
@@ -1401,6 +1811,7 @@ function showMenu() {
   ui.bossHud.classList.add('hidden');
 }
 
+syncSettingsUI();
 resetGame();
 showMenu();
 requestAnimationFrame(frame);

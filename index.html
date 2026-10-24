@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261024b">
+  <link rel="stylesheet" href="style.css?v=20261025a">
 </head>
 <body>
   <main id="app">
@@ -39,12 +39,13 @@
         <div class="panel">
           <p class="kicker">2D 网页横板动作射击</p>
           <h1>末日街区</h1>
-          <p class="lead">用 <b>球棍</b> 近身敲碎丧尸，或者换 <b>手枪</b> 风筝尸潮。上下左右自由走位，活到下一波。</p>
+          <p class="lead">用 <b>球棍</b> 近身敲碎丧尸，或者换 <b>手枪</b> 风筝尸潮。打破街头箱子可获得限时强化武器，还要小心空中喷酸丧尸。</p>
           <div class="keys">
             <div><b>WASD / 方向键</b><span>上下左右移动</span></div>
             <div><b>鼠标 / J / 空格</b><span>瞄准与攻击</span></div>
-            <div><b>Q / 1 / 2</b><span>切换 / 球棍 / 手枪</span></div>
-            <div><b>P / M / B / R</b><span>暂停 / 静音 / 音乐 / 重开</span></div>
+            <div><b>Q / 数字键</b><span>切换 / 选择已拥有武器</span></div>
+            <div><b>P / Esc</b><span>暂停并打开设置</span></div>
+            <div><b>M / B / R</b><span>静音 / 音乐 / 重开</span></div>
             <div><b>触屏</b><span>摇杆移动 · 另一指触屏攻击</span></div>
           </div>
           <button id="startBtn" class="primary">开始游戏</button>
@@ -69,8 +70,18 @@
         <div class="panel">
           <h1>已暂停</h1>
           <p>休息一下，尸潮会等你。</p>
+          <div class="settings" aria-label="游戏设置">
+            <label class="slider">主音量 <input id="masterVolume" type="range" min="0" max="100" value="90"><b id="masterVolumeText">90%</b></label>
+            <label class="slider">音乐 <input id="musicVolume" type="range" min="0" max="100" value="95"><b id="musicVolumeText">95%</b></label>
+            <label class="slider">音效 <input id="sfxVolume" type="range" min="0" max="100" value="90"><b id="sfxVolumeText">90%</b></label>
+            <label class="check"><input id="pauseMusicToggle" type="checkbox" checked><span>背景音乐</span></label>
+            <label class="check"><input id="pauseSfxToggle" type="checkbox" checked><span>游戏音效</span></label>
+          </div>
+          <p id="exitInfo" class="hidden">已尝试退出本局；浏览器若无法关闭页面，已为你返回标题界面。</p>
           <button id="resumeBtn" class="primary">继续游戏 (P)</button>
-          <button id="menuBtn" class="ghost">返回标题</button>
+          <button id="settingsBtn" class="ghost">重置设置</button>
+          <button id="menuBtn" class="ghost">返回主界面</button>
+          <button id="exitBtn" class="ghost danger">退出游戏</button>
         </div>
       </section>
 
@@ -88,6 +99,6 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261024b" defer></script>
+  <script src="game.js?v=20261025a" defer></script>
 </body>
 </html>
