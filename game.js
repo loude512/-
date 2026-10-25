@@ -256,9 +256,14 @@ let avatarValue = (() => {
 
 function applyAvatar() {
   const value = avatarValue;
+  const isImage = value.startsWith('data:');
   [ui.avatarImage, ui.avatarBtnImage].forEach(el => {
     if (!el) return;
-    el.style.background = value.startsWith('data:') ? `url(${value}) center/cover no-repeat` : value;
+    el.style.backgroundImage = isImage ? `url("${value}")` : 'none';
+    el.style.backgroundColor = isImage ? '#151c28' : value;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundRepeat = 'no-repeat';
+    el.style.backgroundPosition = 'center';
   });
 }
 function saveAvatar() {
@@ -1644,12 +1649,14 @@ function drawZombie(z) {
   ctx.restore();
   ctx.restore();
 
-  const bw = Math.max(28, z.r * 1.35);
+  const scale = Math.max(.55, z.scale || 1);
+  const bw = clamp(z.r * 1.35 * scale, 28, 180);
+  const barY = y - (z.r * .93 + 26) * scale - 16;
   const pct = clamp(z.hp / z.maxHp * 100, 0, 100);
   ctx.fillStyle = 'rgba(0,0,0,.55)';
-  rr(ctx, x - bw / 2, y - z.r * 2.35, bw, 6, 3); ctx.fill();
+  rr(ctx, x - bw / 2, barY, bw, 6, 3); ctx.fill();
   ctx.fillStyle = pct > 55 ? '#7ee081' : pct > 28 ? '#ffd166' : '#ff5a5a';
-  rr(ctx, x - bw / 2 + 1.5, y - z.r * 2.35 + 1.5, (bw - 3) * pct / 100, 3, 1.5); ctx.fill();
+  rr(ctx, x - bw / 2 + 1.5, barY + 1.5, (bw - 3) * pct / 100, 3, 1.5); ctx.fill();
 }
 
 function drawGunArt(name, flash) {
