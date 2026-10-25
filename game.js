@@ -479,9 +479,11 @@ function renderLevelCarousel() {
   const prev = unlocked[selectedLevelIndex - 1];
   const next = levels[level.id]; // 下一关卡对象
   const nextLocked = !!next && next.id > unlockedLevel;
-  ui.prevLevelCard.classList.toggle('hidden', !prev);
+  ui.prevLevelCard.classList.remove('hidden');
   ui.currentLevelCard.classList.remove('hidden');
-  ui.nextLevelCard.classList.toggle('hidden', !next);
+  ui.nextLevelCard.classList.remove('hidden');
+  ui.prevLevelCard.style.visibility = prev ? 'visible' : 'hidden';
+  ui.nextLevelCard.style.visibility = next ? 'visible' : 'hidden';
   if (prev) fillCarouselCard(ui.prevLevelCard, prev, false, false);
   fillCarouselCard(ui.currentLevelCard, level, false, false);
   if (next) fillCarouselCard(ui.nextLevelCard, next, nextLocked, true);
