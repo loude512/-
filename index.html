@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261031b">
+  <link rel="stylesheet" href="style.css?v=20261026e">
 </head>
 <body>
   <main id="app">
@@ -24,6 +24,10 @@
             <b id="weaponName">球棍</b>
             <span id="ammoText">子弹 ∞</span>
           </div>
+          <div class="xp-wrap">
+            <b id="xpLevelText">LV 1</b>
+            <div class="xp-bar"><i id="xpFill"></i></div>
+          </div>
         </div>
         <div class="hud-right">
           <div class="stat"><span>波次</span><b id="waveText">1</b></div>
@@ -38,12 +42,21 @@
 
       <div id="waveBanner" class="hidden"><span id="waveBannerText">第 1 波</span></div>
 
-      <section id="menu" class="overlay">
-        <div class="panel">
-          <p class="kicker">2D 网页横板动作射击</p>
-          <h1>末日街区</h1>
+      <section id="menu" class="overlay menu-overlay">
+        <div class="menu-frame">
+          <span class="menu-line" aria-hidden="true"></span>
+          <p class="kicker">末日横板 · 动作射击</p>
+          <h1 class="menu-title">末日街区</h1>
+          <p class="menu-sub">尸潮围城 · 拾起武器 · 活到天亮</p>
+          <p id="bestScore" class="best-chip hidden">历史最高分 <b id="bestScoreValue">0</b></p>
           <div id="startLoading" class="hidden"><i id="startLoadingFill"></i></div>
-          <button id="startBtn" class="primary">开始游戏</button>
+          <button id="startBtn" class="primary menu-start">开 始 游 戏</button>
+          <div class="menu-hints">
+            <span class="hint-chip pc-only">WASD / 方向键 移动 · 鼠标瞄准射击</span>
+            <span class="hint-chip pc-only">1-6 快捷换枪 · P 暂停</span>
+            <span class="hint-chip touch-only">左手摇杆移动 · 另一只手触摸射击</span>
+          </div>
+          <span class="menu-line flip" aria-hidden="true"></span>
         </div>
       </section>
 
@@ -77,23 +90,6 @@
               <div id="comingSoon" class="coming-soon hidden"></div>
             </section>
 
-            <section id="levelListView" class="lobby-page hidden">
-              <div class="panel level-panel">
-                <p class="kicker">全部关卡</p>
-                <h1>选择关卡</h1>
-                <div class="level-groups">
-                  <div class="level-group">
-                    <h2>黑夜地图</h2>
-                    <div id="nightLevels" class="level-list"></div>
-                  </div>
-                  <div class="level-group">
-                    <h2>白天地图</h2>
-                    <div id="dayLevels" class="level-list"></div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
             <section id="profileView" class="lobby-page hidden">
               <div class="panel profile-panel">
                 <p class="kicker">玩家档案</p>
@@ -112,27 +108,68 @@
             </section>
 
             <section id="shopView" class="lobby-page hidden">
-              <div class="panel feature-panel">
+              <div class="panel shop-panel">
                 <p class="kicker">补给交易</p>
-                <h1>商店</h1>
-                <p class="feature-desc">金币与钻石商店正在准备中，后续会开放购买。</p>
-                <div class="feature-grid">
-                  <div class="feature-card"><b>武器补给</b><span>即将开放</span></div>
-                  <div class="feature-card"><b>医疗物资</b><span>即将开放</span></div>
-                  <div class="feature-card"><b>特殊道具</b><span>即将开放</span></div>
+                <h1>商店 · 装备抽奖</h1>
+                <div class="shop-balance">
+                  <span class="resource diamond"><i></i><b id="shopDiamonds">0</b></span>
+                  <span class="resource ticket"><i>🎫</i><b id="shopTickets">0</b> 抽奖券</span>
+                </div>
+                <div class="gacha-box">
+                  <p class="gacha-desc">消耗抽奖券抽取装备（随机部位、随机品质），品质概率随解锁进度提升；抽奖券可由首次完美通关获得，或用钻石购买。</p>
+                  <div class="gacha-btns">
+                    <button id="gacha1Btn" class="primary">抽奖 ×1<span>消耗 1 张券</span></button>
+                    <button id="gacha10Btn" class="ghost">抽奖 ×10<span>消耗 10 张券</span></button>
+                  </div>
+                  <div class="gacha-buy">
+                    <button id="buyTicket1" class="ghost small">购买抽奖券 ×1 · 25💎</button>
+                    <button id="buyTicket10" class="ghost small">购买抽奖券 ×10 · 225💎</button>
+                  </div>
+                  <p id="gachaHint" class="gacha-hint"></p>
                 </div>
               </div>
             </section>
 
             <section id="upgradeView" class="lobby-page hidden">
-              <div class="panel feature-panel">
-                <p class="kicker">角色强化</p>
-                <h1>升级</h1>
-                <p class="feature-desc">血量、移动速度与武器强化正在准备中。</p>
-                <div class="feature-grid">
-                  <div class="feature-card"><b>生命强化</b><span>即将开放</span></div>
-                  <div class="feature-card"><b>移动强化</b><span>即将开放</span></div>
-                  <div class="feature-card"><b>武器强化</b><span>即将开放</span></div>
+              <div class="panel upgrade-panel">
+                <div class="up-head">
+                  <div class="up-char"><img src="assets/player.png" alt="角色形象" draggable="false"></div>
+                  <div class="up-attrs">
+                    <div class="stat-chip"><span>生命值</span><b id="statHp">100</b></div>
+                    <div class="stat-chip"><span>攻击力</span><b id="statAtk">100%</b></div>
+                    <div class="stat-chip"><span>攻击速度</span><b id="statAs">100%</b></div>
+                    <div class="stat-chip crit"><span>暴击率</span><b id="statCrit">5%</b></div>
+                    <div class="stat-chip crit"><span>暴击伤害</span><b id="statCritDmg">150%</b></div>
+                    <div class="stat-chip crit"><span>移动速度</span><b id="statMove">100%</b></div>
+                  </div>
+                </div>
+                <div class="up-tabs">
+                  <button type="button" class="up-tab active" data-uptab="equip">装备</button>
+                  <button type="button" class="up-tab" data-uptab="smelt">熔炼</button>
+                  <button type="button" class="up-tab" data-uptab="break">突破</button>
+                </div>
+                <div id="upEquipPage" class="up-page">
+                  <div id="equipSlots" class="equip-slots"></div>
+                  <p id="equipToast" class="equip-toast hidden"></p>
+                  <p id="equipBagTitle" class="equip-bag-title">装备背包</p>
+                  <div id="equipBag" class="equip-bag"></div>
+                </div>
+                <div id="upSmeltPage" class="up-page hidden">
+                  <div class="mats-bar">
+                    <span class="mats-chip">✦ 强化结晶 <b id="smeltMats">0</b></span>
+                    <span class="mats-chip gold">🪙 金币 <b id="smeltGold">0</b></span>
+                    <button id="smeltWhiteBtn" class="ghost small">一键熔炼白装</button>
+                  </div>
+                  <p class="equip-bag-title">选择装备熔炼为强化结晶（白色装备也可在「突破」中直接使用）</p>
+                  <div id="smeltList" class="smelt-list"></div>
+                </div>
+                <div id="upBreakPage" class="up-page hidden">
+                  <div class="mats-bar">
+                    <span class="mats-chip">✦ 强化结晶 <b id="breakMats">0</b></span>
+                    <span class="mats-chip gold">🪙 金币 <b id="breakGold">0</b></span>
+                  </div>
+                  <p class="equip-bag-title">突破提升全属性：每层 暴击率 +0.5% · 暴击伤害 +5% · 移速 +0.5%（全槽共享）</p>
+                  <div id="breakList" class="break-list"></div>
                 </div>
               </div>
             </section>
@@ -166,11 +203,20 @@
         </div>
 
         <div class="lobby-actions">
-          <button id="shopBtn" class="ghost" data-lobby-view="shopView">商店</button>
-          <button id="upgradeBtn" class="ghost" data-lobby-view="upgradeView">升级</button>
-          <button id="levelListBtn" class="ghost" data-lobby-view="levelListView">关卡</button>
-          <button id="inventoryBtn" class="ghost" data-lobby-view="inventoryView">背包</button>
-          <button id="extrasBtn" class="ghost" data-lobby-view="extrasView" disabled>扩展关卡</button>
+          <button id="shopBtn" class="ghost" data-lobby-view="shopView"><span class="nav-ico">🛒</span>商店</button>
+          <button id="upgradeBtn" class="ghost" data-lobby-view="upgradeView"><span class="nav-ico">🔺</span>升级</button>
+          <button id="levelListBtn" class="ghost" data-lobby-view="levelView"><span class="nav-ico">🗺️</span>关卡</button>
+          <button id="inventoryBtn" class="ghost" data-lobby-view="inventoryView"><span class="nav-ico">🎒</span>背包</button>
+          <button id="extrasBtn" class="ghost" data-lobby-view="extrasView" disabled><span class="nav-ico">🗂️</span>扩展</button>
+        </div>
+      </section>
+
+      <section id="levelUp" class="overlay hidden">
+        <div class="panel levelup-panel">
+          <p class="kicker">LEVEL UP</p>
+          <h1 id="levelUpTitle">升级 · LV 2</h1>
+          <p class="levelup-sub">选择一项战斗天赋<span class="pc-only">（电脑可按 1 / 2 / 3 快速选择）</span></p>
+          <div id="talentCards" class="talent-cards"></div>
         </div>
       </section>
 
@@ -192,8 +238,19 @@
             <div><span>坚持波次</span><b id="levelWaves">3</b></div>
             <div><span>击杀数</span><b id="levelKills">0</b></div>
           </div>
-          <button id="restartLevelBtn" class="primary">再次挑战</button>
+          <p id="clearRewards" class="clear-rewards"></p>
+          <button id="nextLevelBtn" class="primary hidden">下一关</button>
+          <button id="restartLevelBtn" class="ghost">再次挑战</button>
           <button id="levelLobbyBtn" class="ghost">返回主菜单</button>
+        </div>
+      </section>
+
+      <section id="gachaResult" class="overlay hidden">
+        <div class="panel gacha-panel">
+          <p class="kicker">抽奖结果</p>
+          <div id="gachaResults" class="gacha-results"></div>
+          <button id="gachaAgainBtn" class="primary">再抽一次</button>
+          <button id="gachaOkBtn" class="ghost">确定</button>
         </div>
       </section>
 
@@ -234,12 +291,15 @@
         <div id="swapBtn">换枪</div>
         <div id="touchPauseBtn" class="round-btn">暂停</div>
       </div>
+
+      <div id="weaponBar" class="hidden"></div>
+      <div id="touchHint" class="hidden"><span>左手摇杆移动 · 另一只手按住屏幕任意位置瞄准射击</span></div>
     </div>
 
     <div id="rotateTip"><span>请将手机旋转到横屏游玩</span></div>
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261031b" defer></script>
+  <script src="game.js?v=20261026e" defer></script>
 </body>
 </html>
