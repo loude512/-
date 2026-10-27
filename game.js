@@ -15,6 +15,9 @@ const worldWidth = 6400;
 const ui = {
   stage: stageEl,
   weaponBar: document.getElementById('weaponBar'),
+  skillBar: document.getElementById('skillBar'),
+  skill1Btn: document.getElementById('skill1Btn'),
+  skill2Btn: document.getElementById('skill2Btn'),
   touchHint: document.getElementById('touchHint'),
   bestScore: document.getElementById('bestScore'),
   bestScoreValue: document.getElementById('bestScoreValue'),
@@ -111,6 +114,7 @@ const ui = {
   extrasBtn: document.getElementById('extrasBtn'),
   levelListBtn: document.getElementById('levelListBtn'),
   levelView: document.getElementById('levelView'),
+  characterView: document.getElementById('characterView'),
   profileView: document.getElementById('profileView'),
   shopView: document.getElementById('shopView'),
   upgradeView: document.getElementById('upgradeView'),
@@ -273,8 +277,56 @@ const weapons = {
   rifle: {
     name: '步枪', kind: 'gun', short: '狙', color: '#62a8ff', cooldown: .94, damage: 112, bulletSpeed: 1750, spread: .015, knock: 430, ammoUse: 1, pellets: 1, pickupAmmo: 18, disposable: true, shake: 6.0,
     desc: '高伤单发'
+  },
+  // 撕裂者专属武器：一对黑色大爪（近战）与隔空血刃（远程）
+  claw: {
+    name: '血爪', kind: 'melee', short: '爪', color: '#c9d2de', cooldown: .2, damage: 44, range: 96, arc: 1.62, knock: 320, infinite: true, starter: true, claw: true,
+    desc: '双爪连斩'
+  },
+  blade: {
+    name: '血刃', kind: 'gun', short: '刃', color: '#ff3d55', cooldown: .24, damage: 40, bulletSpeed: 1080, spread: .04, knock: 190, ammoUse: 1, starter: true, shake: 2.6, blade: true,
+    desc: '划出隔空血刃'
   }
 };
+
+// ===== 角色与技能 =====
+// 每个角色：基础血量、天生吸血、受到伤害减免、自带武器；一技能为大招
+const CHARACTERS = {
+  luolin: {
+    id: 'luolin', name: '罗琳', sprite: 'player', hp: 100, lifesteal: 0, dmgReduce: 0,
+    weapons: ['melee', 'gun'], ult: 'fusion', ultSlotOnly: false,
+    trait: '可在局外复制其他角色的技能，设定为本关二技能',
+    desc: '双翼少女 · 攻防均衡'
+  },
+  ripper: {
+    id: 'ripper', name: '丧尸撕裂者', sprite: null, hp: 60, lifesteal: .3, dmgReduce: .4,
+    weapons: ['claw', 'blade'], ult: 'bloodhunt', noCopy: true,
+    trait: '自带 30% 吸血，血量很低但受到的伤害大幅减免',
+    desc: '白发黑衣 · 嗜血刺客'
+  }
+};
+const SKILL_DEFS = {
+  fusion: {
+    id: 'fusion', name: '融合解放', icon: '🌀', dur: 5, cd: 30, owner: 'luolin',
+    mods: { lifePct: .10, cd: .8, speed: 1.05, dmg: 1 },
+    desc: '与二技能融合 · 吸血 +10% · 攻速 +20% · 移速 +5%（5 秒）'
+  },
+  bloodhunt: {
+    id: 'bloodhunt', name: '嗜血疾袭', icon: '🩸', dur: 7, cd: 45, owner: 'ripper',
+    mods: { speed: 2, lifePct: .15, dmg: .5, spread: .3 },
+    desc: '移速 +100% · 吸血 +15% · 伤害 −50% · 命中率 +70%（7 秒）'
+  }
+};
+let currentRoleId = (() => {
+  try { const v = localStorage.getItem('zombie-role'); return CHARACTERS[v] ? v : 'luolin'; } catch (err) { return 'luolin'; }
+})();
+function roleId() { return currentRoleId; }
+function roleDef() { return CHARACTERS[roleId()]; }
+function saveRole() { try { localStorage.setItem('zombie-role', roleId()); } catch (err) { /* 忽略存储错误 */ } }
+let copiedSkillId = (() => {
+  try { const v = localStorage.getItem('zombie-skill-copy'); return SKILL_DEFS[v] && v !== roleDef().ult ? v : null; } catch (err) { return null; }
+})();
+function saveCopiedSkill() { try { localStorage.setItem('zombie-skill-copy', copiedSkillId || ''); } catch (err) { /* 忽略存储错误 */ } }
 
 const settings = (() => {
   const base = { master: .9, music: .95, sfx: .9, shake: .8 };
@@ -414,6 +466,120 @@ function applyAvatar() {
 }
 function saveAvatar() {
   try { localStorage.setItem('zombie-avatar', avatarValue); } catch (err) { /* 头像过大或私有模式时忽略 */ }
+}
+
+// ===== 角色形象定制 =====
+// 保留原画角色，通过 ctx.filter（Chromium 内核原生支持，含抖音 webview）实时换色，
+// 配置持久化到本机，并支持导出/导入短分享码，换设备也能带走形象
+const CHAR_PRESETS = [
+  { name: '默认', hue: 0, sat: 100, bright: 100 },
+  { name: '赤焰', hue: 18, sat: 155, bright: 106 },
+  { name: '翠林', hue: 96, sat: 135, bright: 102 },
+  { name: '紫影', hue: 268, sat: 145, bright: 96 },
+  { name: '金辉', hue: 38, sat: 125, bright: 116 },
+  { name: '冰蓝', hue: 188, sat: 135, bright: 110 },
+  { name: '墨夜', hue: 218, sat: 72, bright: 82 }
+];
+const character = (() => {
+  const base = { hue: 0, sat: 100, bright: 100 };
+  try {
+    const saved = JSON.parse(localStorage.getItem('zombie-character') || '{}');
+    if (Number.isFinite(saved.hue)) base.hue = clamp(saved.hue, 0, 360);
+    if (Number.isFinite(saved.sat)) base.sat = clamp(saved.sat, 20, 220);
+    if (Number.isFinite(saved.bright)) base.bright = clamp(saved.bright, 40, 160);
+  } catch (err) { /* 忽略存储错误 */ }
+  return base;
+})();
+function saveCharacter() {
+  delete character.name;
+  try { localStorage.setItem('zombie-character', JSON.stringify(character)); } catch (err) { /* 忽略存储错误 */ }
+}
+function characterFilter() {
+  if (character.hue === 0 && character.sat === 100 && character.bright === 100) return '';
+  return `hue-rotate(${character.hue}deg) saturate(${character.sat}%) brightness(${character.bright}%)`;
+}
+function characterCode() {
+  return `${character.hue.toString(36)}-${character.sat.toString(36)}-${character.bright.toString(36)}`;
+}
+function applyCharacterCode(code) {
+  const parts = String(code || '').trim().split('-');
+  if (parts.length !== 3) return false;
+  const hue = parseInt(parts[0], 36), sat = parseInt(parts[1], 36), bright = parseInt(parts[2], 36);
+  if (![hue, sat, bright].every(Number.isFinite)) return false;
+  character.hue = clamp(hue, 0, 360);
+  character.sat = clamp(sat, 20, 220);
+  character.bright = clamp(bright, 40, 160);
+  saveCharacter();
+  return true;
+}
+
+function renderCharacterPanel() {
+  const canvas = document.getElementById('charPreview');
+  const hueEl = document.getElementById('charHue');
+  const satEl = document.getElementById('charSat');
+  const brightEl = document.getElementById('charBright');
+  const roleCards = document.getElementById('roleCards');
+  const roleSkills = document.getElementById('roleSkills');
+  if (hueEl) {
+    hueEl.value = character.hue;
+    satEl.value = character.sat;
+    brightEl.value = character.bright;
+    document.getElementById('charHueText').textContent = `${character.hue}°`;
+    document.getElementById('charSatText').textContent = `${character.sat}%`;
+    document.getElementById('charBrightText').textContent = `${character.bright}%`;
+  }
+  // 角色卡
+  if (roleCards) {
+    roleCards.innerHTML = Object.values(CHARACTERS).map(c => {
+      const ult = SKILL_DEFS[c.ult];
+      const locked = false; // 后续扩展角色可设解锁条件
+      return `<button type="button" class="role-card${roleId() === c.id ? ' selected' : ''}${locked ? ' locked' : ''}" data-role="${c.id}"${locked ? ' disabled' : ''}>`
+        + `<b class="role-name">${c.name}</b>`
+        + `<span class="role-desc">${c.desc}</span>`
+        + `<span class="role-trait">${c.trait}</span>`
+        + `<span class="role-stats">生命 ${c.hp} · 吸血 ${Math.round(c.lifesteal * 100)}% · 减伤 ${Math.round(c.dmgReduce * 100)}%</span>`
+        + `</button>`;
+    }).join('');
+  }
+  // 技能说明 + 罗琳复制技能
+  if (roleSkills) {
+    const role = roleDef();
+    const ult = SKILL_DEFS[role.ult];
+    let html = `<div class="role-skill ult-skill"><span class="rs-ico">${ult.icon}</span><span class="rs-info"><b>一技能 · ${ult.name}</b><span>${ult.desc}</span></span><i class="rs-tag">大招</i></div>`;
+    if (role.noCopy) {
+      html += `<div class="role-skill locked"><span class="rs-ico">🔒</span><span class="rs-info"><b>二技能</b><span>该角色没有二技能槽</span></span></div>`;
+    } else {
+      const others = Object.values(CHARACTERS).filter(c => c.id !== role.id).map(c => SKILL_DEFS[c.ult]);
+      html += `<div class="role-skill${copiedSkillId ? '' : ' empty'}"><span class="rs-ico">${copiedSkillId ? SKILL_DEFS[copiedSkillId].icon : '⧉'}</span><span class="rs-info"><b>二技能${copiedSkillId ? ' · ' + SKILL_DEFS[copiedSkillId].name : ' · 未复制'}</b><span>${copiedSkillId ? SKILL_DEFS[copiedSkillId].desc : '复制其他角色的技能作为本关二技能'}</span></span></div>`;
+      html += `<div class="copy-skill">` + others.map(s => `<button type="button" class="char-preset${copiedSkillId === s.id ? ' selected' : ''}" data-copy="${s.id}">复制「${s.name}」</button>`).join('') + `</div>`;
+    }
+    roleSkills.innerHTML = html;
+  }
+  if (canvas) drawCharPreview(canvas);
+}
+function drawCharPreview(canvas) {
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, canvas.width, canvas.height);
+  c.save();
+  const g = c.createRadialGradient(100, 128, 10, 100, 128, 100);
+  g.addColorStop(0, 'rgba(255,130,70,.16)');
+  g.addColorStop(1, 'rgba(255,130,70,0)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, 200, 200);
+  c.translate(100, 176);
+  c.scale(1.35, 1.35);
+  const filter = characterFilter();
+  if (filter) c.filter = filter;
+  if (roleId() === 'ripper') {
+    drawRipper(c, true);
+  } else if (sprites.player.ready) {
+    const img = sprites.player.image;
+    const nw = img.naturalWidth || 128, nh = img.naturalHeight || 128;
+    const targetH = 122;
+    c.drawImage(img, -nw * targetH / nh / 2, -targetH, nw * targetH / nh, targetH);
+  }
+  c.restore();
+  c.filter = 'none';
 }
 function renderAvatarPresets() {
   ui.avatarPresets.innerHTML = '';
@@ -638,14 +804,19 @@ if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-wi
 function resetGame(config = currentLevel || levels[0]) {
   levelConfig = levels.find(l => l.id === config.id) || levels[0];
   currentLevel = levelConfig;
+  const role = roleDef();
   player = {
-    x: worldWidth * .5, y: 392, r: 20, hp: 100, maxHp: 100, speed: 236,
-    weapon: 'gun', inventory: defaultInventory.slice(), ammoByWeapon: { gun: 72 },
-    facing: 1, attackCd: 0, swing: 0, swingId: 0, swingHit: new Set(),
+    x: worldWidth * .5, y: 392, r: 20, hp: role.hp, maxHp: role.hp, speed: 236,
+    weapon: role.weapons[1], inventory: role.weapons.slice(), ammoByWeapon: { [role.weapons[1]]: 72 },
+    facing: 1, moving: false, attackCd: 0, swing: 0, swingId: 0, swingHit: new Set(),
     invuln: .6, anim: 0, hurtFlash: 0, flash: 0, recoil: 0, step: 0, autoBackToGun: false,
     level: 1, xp: 0, xpNext: xpCurve(1), pendingLevelUps: 0, talents: {},
     dmgMul: 1, speedMul: 1, cdMul: 1, magnetMul: 1, eliteDmgMul: 1, executeMul: 1, luckMul: 1,
-    lifesteal: 0, thorns: 0, bloom: 0
+    lifesteal: 0, thorns: 0, bloom: 0,
+    skill1Def: SKILL_DEFS[role.ult], skill1Cd: 0, skill1Active: 0,
+    skill2Def: (!role.noCopy && copiedSkillId && SKILL_DEFS[copiedSkillId]) ? SKILL_DEFS[copiedSkillId] : null,
+    skill2Cd: 0, skill2Active: 0,
+    roleId: roleId()
   };
   // 装备养成加成：生命 / 攻击力 / 攻击速度 + 突破层数带来的暴击与移速
   const eqs = equipStats();
@@ -697,6 +868,49 @@ function resetGame(config = currentLevel || levels[0]) {
 function setIngame(on) {
   document.body.classList.toggle('ingame', on);
   if (ui.weaponBar) ui.weaponBar.classList.toggle('hidden', !on);
+  if (ui.skillBar) ui.skillBar.classList.toggle('hidden', !on);
+  if (!on && ui.skillBar) updateSkillBar();
+}
+
+// 技能栏：图标、冷却倒计时、可用状态
+let lastSkillSig = '';
+function updateSkillBar() {
+  if (!ui.skillBar || !ui.skill1Btn) return;
+  const slots = [
+    { btn: ui.skill1Btn, def: player ? player.skill1Def : null, cd: player ? player.skill1Cd : 0, active: player ? player.skill1Active : 0 },
+    { btn: ui.skill2Btn, def: player ? player.skill2Def : null, cd: player ? player.skill2Cd : 0, active: player ? player.skill2Active : 0 }
+  ];
+  const showKeys = !document.body.classList.contains('touch');
+  for (const s of slots) {
+    const ico = s.btn.querySelector('.sk-ico');
+    const cdEl = s.btn.querySelector('.sk-cd');
+    const ready = s.btn.querySelector('.sk-ready');
+    const keyEl = s.btn.querySelector('.sk-key');
+    if (!s.def) {
+      ico.textContent = '';
+      cdEl.textContent = '未装备';
+      s.btn.disabled = true;
+      s.btn.classList.remove('active');
+      ready.style.display = 'none';
+    } else {
+      ico.textContent = s.def.icon;
+      s.btn.disabled = false;
+      if (s.active > 0) {
+        cdEl.textContent = s.active.toFixed(1);
+        s.btn.classList.add('active');
+        ready.style.display = 'none';
+      } else if (s.cd > 0) {
+        cdEl.textContent = Math.ceil(s.cd);
+        s.btn.classList.remove('active');
+        ready.style.display = 'none';
+      } else {
+        cdEl.textContent = '';
+        s.btn.classList.remove('active');
+        ready.style.display = 'block';
+      }
+    }
+    keyEl.style.display = showKeys ? '' : 'none';
+  }
 }
 
 let touchHintTimer = null;
@@ -721,25 +935,31 @@ function dismissTouchHint() {
 }
 
 // 局内天赋系统：升级时三选一，普通/稀有/史诗三档
+// 每个天赋最多叠 3 层，第二层起收益递减：gains[0] 为首次效果，gains[1]/[2] 依次衰减
+const TALENT_MAX_STACKS = 3;
 const TALENTS = [
-  { id: 'strength', icon: '💪', name: '强健体魄', rarity: 'common', max: 99, desc: '最大生命 +25，并立即恢复 25 点生命', apply: () => { player.maxHp += 25; player.hp = Math.min(player.maxHp, player.hp + 25); } },
-  { id: 'rage', icon: '🔥', name: '战意狂潮', rarity: 'common', max: 99, desc: '所有武器伤害 +12%', apply: () => { player.dmgMul += .12; } },
-  { id: 'swift', icon: '💨', name: '迅捷步伐', rarity: 'common', max: 5, desc: '移动速度 +8%', apply: () => { player.speedMul += .08; player.speed = Math.round(236 * player.speedMul * critStats().move); } },
-  { id: 'magnet', icon: '🧲', name: '经验磁石', rarity: 'common', max: 4, desc: '经验拾取范围 +50%', apply: () => { player.magnetMul += .5; } },
-  { id: 'lifesteal', icon: '🩸', name: '嗜血', rarity: 'common', max: 3, desc: '每次击杀恢复 2 点生命', apply: () => { player.lifesteal += 2; } },
-  { id: 'precision', icon: '🎯', name: '精准瞄准', rarity: 'rare', max: 4, desc: '武器攻击间隔 -8%', apply: () => { player.cdMul = Math.max(.55, player.cdMul - .08); } },
-  { id: 'thorns', icon: '🌵', name: '荆棘装甲', rarity: 'rare', max: 99, desc: '被近身击中时反伤 14 点', apply: () => { player.thorns += 14; } },
-  { id: 'slayer', icon: '💀', name: '巨人杀手', rarity: 'rare', max: 99, desc: '对精英与 BOSS 伤害 +20%', apply: () => { player.eliteDmgMul += .2; } },
-  { id: 'lucky', icon: '🍀', name: '幸运搜刮', rarity: 'rare', max: 3, desc: '补给掉落概率 +30%', apply: () => { player.luckMul += .3; } },
-  { id: 'execute', icon: '🗡️', name: '猎杀本能', rarity: 'epic', max: 2, desc: '对生命低于 35% 的敌人伤害 +45%', apply: () => { player.executeMul += .45; } },
-  { id: 'bloom', icon: '💥', name: '死亡绽放', rarity: 'epic', max: 4, desc: '击杀时 12% 概率引发爆炸（45 范围伤害）', apply: () => { player.bloom += 1; } }
+  { id: 'strength', icon: '💪', name: '强健体魄', rarity: 'common', gains: [25, 12, 6], fmt: v => `最大生命 +${v}，并立即恢复 ${v} 点生命`, apply: v => { player.maxHp += v; player.hp = Math.min(player.maxHp, player.hp + v); } },
+  { id: 'rage', icon: '🔥', name: '战意狂潮', rarity: 'common', gains: [.15, .07, .03], fmt: v => `所有武器伤害 +${Math.round(v * 100)}%`, apply: v => { player.dmgMul += v; } },
+  { id: 'swift', icon: '💨', name: '迅捷步伐', rarity: 'common', gains: [.08, .04, .02], fmt: v => `移动速度 +${Math.round(v * 100)}%`, apply: v => { player.speedMul += v; player.speed = Math.round(236 * player.speedMul * critStats().move); } },
+  { id: 'magnet', icon: '🧲', name: '经验磁石', rarity: 'common', gains: [.5, .25, .12], fmt: v => `经验拾取范围 +${Math.round(v * 100)}%`, apply: v => { player.magnetMul += v; } },
+  { id: 'lifesteal', icon: '🩸', name: '嗜血', rarity: 'common', gains: [2, 1, 1], fmt: v => `每次击杀恢复 ${v} 点生命`, apply: v => { player.lifesteal += v; } },
+  { id: 'precision', icon: '🎯', name: '精准瞄准', rarity: 'rare', gains: [.08, .04, .02], fmt: v => `武器攻击间隔 -${Math.round(v * 100)}%`, apply: v => { player.cdMul = Math.max(.55, player.cdMul - v); } },
+  { id: 'thorns', icon: '🌵', name: '荆棘装甲', rarity: 'rare', gains: [14, 7, 3], fmt: v => `被近身击中时反伤 ${v} 点`, apply: v => { player.thorns += v; } },
+  { id: 'slayer', icon: '💀', name: '巨人杀手', rarity: 'rare', gains: [.2, .1, .05], fmt: v => `对精英与 BOSS 伤害 +${Math.round(v * 100)}%`, apply: v => { player.eliteDmgMul += v; } },
+  { id: 'lucky', icon: '🍀', name: '幸运搜刮', rarity: 'rare', gains: [.3, .15, .07], fmt: v => `补给掉落概率 +${Math.round(v * 100)}%`, apply: v => { player.luckMul += v; } },
+  { id: 'execute', icon: '🗡️', name: '猎杀本能', rarity: 'epic', gains: [.45, .2, .1], fmt: v => `对生命低于 35% 的敌人伤害 +${Math.round(v * 100)}%`, apply: v => { player.executeMul += v; } },
+  { id: 'bloom', icon: '💥', name: '死亡绽放', rarity: 'epic', gains: [1, 1, 1], fmt: (v, total) => `击杀时 ${12 * total}% 概率引发爆炸（45 范围伤害）`, apply: v => { player.bloom += v; } }
 ];
 const rarityNames = { common: '普通', rare: '稀有', epic: '史诗' };
 let levelUpChoices = [];
 
 function rollTalents() {
-  const pool = TALENTS.filter(t => (player.talents[t.id] || 0) < t.max);
-  const weightOf = t => t.rarity === 'common' ? 100 : t.rarity === 'rare' ? 52 : 22;
+  const pool = TALENTS.filter(t => (player.talents[t.id] || 0) < TALENT_MAX_STACKS);
+  const weightOf = t => {
+    const base = t.rarity === 'common' ? 100 : t.rarity === 'rare' ? 52 : 22;
+    const stacks = player.talents[t.id] || 0;
+    return base * (stacks === 0 ? 1 : stacks === 1 ? .6 : .3); // 已选过的天赋降低再次出现概率
+  };
   const picks = [];
   while (picks.length < 3 && pool.length) {
     let total = 0;
@@ -763,13 +983,14 @@ function openLevelUp() {
   ui.levelUpTitle.textContent = `升级 · LV ${player.level}`;
   ui.talentCards.innerHTML = levelUpChoices.map((t, i) => {
     const stacks = player.talents[t.id] || 0;
+    const next = stacks < TALENT_MAX_STACKS ? t.gains[stacks] : null;
     return `<button type="button" class="talent-card r-${t.rarity}" data-talent="${t.id}">`
       + `<span class="t-rarity">${rarityNames[t.rarity]}</span>`
       + `<em class="t-key">${i + 1}</em>`
       + `<span class="t-icon">${t.icon}</span>`
       + `<b class="t-name">${t.name}</b>`
-      + `<span class="t-desc">${t.desc}</span>`
-      + `<span class="t-stack${stacks ? '' : ' t-new'}">${stacks ? `已拥有 ×${stacks}` : '◆ 新天赋'}</span>`
+      + `<span class="t-desc">${t.fmt(next, stacks + 1)}</span>`
+      + `<span class="t-stack${stacks ? '' : ' t-new'}">${stacks ? `已拥有 ×${stacks} / ${TALENT_MAX_STACKS}` : '◆ 新天赋'}</span>`
       + `</button>`;
   }).join('');
   ui.levelUp.classList.remove('hidden');
@@ -780,8 +1001,11 @@ function openLevelUp() {
 function pickTalent(id) {
   const t = TALENTS.find(x => x.id === id);
   if (!t || state !== 'levelup') return;
-  player.talents[id] = (player.talents[id] || 0) + 1;
-  t.apply();
+  const stacks = player.talents[id] || 0;
+  if (stacks >= TALENT_MAX_STACKS) return;
+  const value = t.gains[stacks];
+  player.talents[id] = stacks + 1;
+  t.apply(value, stacks + 1);
   audio.weaponPick();
   player.pendingLevelUps = Math.max(0, player.pendingLevelUps - 1);
   updateHud();
@@ -984,7 +1208,7 @@ function selectLevelBy(delta) {
   }
 }
 
-const lobbyViewIds = ['levelView', 'profileView', 'shopView', 'upgradeView', 'inventoryView', 'extrasView'];
+const lobbyViewIds = ['levelView', 'profileView', 'characterView', 'shopView', 'upgradeView', 'inventoryView', 'extrasView'];
 let currentLobbyView = 'levelView';
 function showLobbyView(name, silent = false) {
   if (!lobbyViewIds.includes(name)) name = 'levelView';
@@ -999,6 +1223,7 @@ function showLobbyView(name, silent = false) {
   if (name === 'profileView') syncSettingsUI();
   if (name === 'upgradeView') renderUpgradePanel();
   if (name === 'shopView') renderShop();
+  if (name === 'characterView') renderCharacterPanel();
   if (!silent && actx) audio.wave();
 }
 function startSelectedLevel() {
@@ -1012,7 +1237,7 @@ function startSelectedLevel() {
 
 function startLevel(level) {
   if (!level) return;
-  if (state === 'playing' && level === currentLevel) return;
+  if (state === 'playing' && level === currentLevel && player && player.roleId === roleId()) return;
   if (level.id > unlockedLevel) {
     showComingSoon('该关卡尚未解锁');
     return;
@@ -1163,6 +1388,7 @@ function weaponAmmo(name = player ? player.weapon : 'gun') {
   if (w.kind === 'melee') return Infinity;
   return Number.isFinite(player.ammoByWeapon[name] ?? 0) ? player.ammoByWeapon[name] : 0;
 }
+function rangedAmmo() { return player ? weaponAmmo(roleDef().weapons[1]) : 0; }
 
 function removeDisposableWeapon(name = player.weapon) {
   if (!player || !weapons[name] || !weapons[name].disposable) return false;
@@ -1178,7 +1404,7 @@ function tryAttack() {
   const aim = currentAim();
   player.facing = Math.cos(aim) >= 0 ? 1 : -1;
   if (w.kind === 'melee') {
-    player.attackCd = w.cooldown * player.cdMul;
+    player.attackCd = w.cooldown * player.cdMul * activeSkillMods().cd;
     player.swing = w.name === '开山刀' ? .17 : .24;
     player.swingId++;
     player.swingHit = new Set();
@@ -1232,7 +1458,8 @@ function tryAttack() {
       return;
     }
     player.autoBackToGun = false;
-    player.attackCd = w.cooldown * player.cdMul;
+    const mods = activeSkillMods();
+    player.attackCd = w.cooldown * player.cdMul * mods.cd;
     player.ammoByWeapon[player.weapon] = ammo - w.ammoUse;
     if (player.weapon === 'gun') player.ammo = player.ammoByWeapon.gun;
     player.flash = .06;
@@ -1243,10 +1470,11 @@ function tryAttack() {
     const shots = w.pellets || 1;
     const mx = player.x + Math.cos(aim) * 24;
     const my = player.y - 62 + Math.sin(aim) * 24;
+    const spreadScale = activeSkillMods().spread;
     for (let s = 0; s < shots; s++) {
-      const spread = rand(-w.spread, w.spread);
+      const spread = rand(-w.spread, w.spread) * spreadScale;
       const a = aim + spread;
-      bullets.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(a) * w.bulletSpeed, vy: Math.sin(a) * w.bulletSpeed, life: w.name === '步枪' ? 1.35 : 1.0, dmg: w.damage, knock: w.knock, color: w.color, friendly: true });
+      bullets.push({ x: mx, y: my, px: mx, py: my, vx: Math.cos(a) * w.bulletSpeed, vy: Math.sin(a) * w.bulletSpeed, life: w.name === '步枪' ? 1.35 : 1.0, dmg: w.damage, knock: w.knock, color: w.color, friendly: true, kind: w.blade ? 'blade' : 'bullet' });
     }
     for (let i = 0; i < 7; i++) {
       const sp = rand(70, 220), aa = aim + rand(-.38, .38);
@@ -1278,12 +1506,17 @@ function damageZombie(z, dmg, aim, knock, crit = false) {
 // 统一伤害入口：叠加天赋加成（全局增伤 / 精英增伤 / 斩杀增伤）与突破暴击
 function dealDamage(z, base, aim, knock) {
   if (!player || z.dead) return;
-  let dmg = base * player.dmgMul;
-  if ((z.elite || z.type === 'boss') && player.eliteDmgMul > 1) dmg *= player.eliteDmgMul;
+  let dmg = base * player.dmgMul * activeSkillMods().dmg;
+  if ((z.elite || z.boss) && player.eliteDmgMul > 1) dmg *= player.eliteDmgMul;
   if (player.executeMul > 1 && z.hp / z.maxHp < .35) dmg *= player.executeMul;
   const cs = critStats();
   const crit = Math.random() < cs.rate;
   if (crit) dmg *= cs.dmg;
+  // 吸血：角色天生 + 技能提供，按造成伤害百分比回血
+  const lifePct = roleDef().lifesteal + activeSkillMods().lifePct;
+  if (lifePct > 0 && !z.dead) {
+    player.hp = Math.min(player.maxHp, player.hp + dmg * lifePct);
+  }
   damageZombie(z, dmg, aim, knock, crit);
 }
 
@@ -1429,12 +1662,20 @@ function update(dt) {
 
   const len = Math.hypot(ix, iy) || 1;
   const moving = len > .08;
+  player.moving = moving;
+  const skillSpeed = activeSkillMods().speed;
   if (moving) {
     const nx = ix / len, ny = iy / len;
-    player.x = clamp(player.x + nx * player.speed * dt, 80, worldWidth - 80);
-    player.y = clamp(player.y + ny * player.speed * dt, laneTop, laneBottom);
+    player.x = clamp(player.x + nx * player.speed * skillSpeed * dt, 80, worldWidth - 80);
+    player.y = clamp(player.y + ny * player.speed * skillSpeed * dt, laneTop, laneBottom);
     player.anim += dt * (Math.hypot(nx, ny) > .4 ? 11 : 6);
   }
+  // 技能冷却与持续时间
+  if (player.skill1Cd > 0) player.skill1Cd = Math.max(0, player.skill1Cd - dt);
+  if (player.skill2Cd > 0) player.skill2Cd = Math.max(0, player.skill2Cd - dt);
+  if (player.skill1Active > 0) player.skill1Active = Math.max(0, player.skill1Active - dt);
+  if (player.skill2Active > 0) player.skill2Active = Math.max(0, player.skill2Active - dt);
+  updateSkillBar();
   const aimNow = currentAim();
   if (mouse.active || touchFire.active || stick.active) {
     player.facing = Math.cos(aimNow) >= 0 ? 1 : -1;
@@ -1506,7 +1747,7 @@ function updateBullets(dt) {
     if (b.enemy) {
       const pr = player.r + 8;
       if (state === 'playing' && player.invuln <= 0 && segmentCircle(b.px, b.py, b.x, b.y, player.x, player.y - 30, pr)) {
-        player.hp -= b.dmg;
+        player.hp -= b.dmg * (1 - roleDef().dmgReduce);
         player.invuln = .62;
         player.hurtFlash = .26;
         player.knockX = Math.sign(b.vx) * Math.abs(b.knock || 90);
@@ -1612,7 +1853,7 @@ function updateEnemies(dt) {
     const touch = d < z.r + player.r - 2;
     if (touch && z.attackCd <= 0 && player.invuln <= 0) {
       z.attackCd = .78;
-      player.hp -= z.dmg;
+      player.hp -= z.dmg * (1 - roleDef().dmgReduce);
       player.invuln = .72;
       player.hurtFlash = .28;
       addShake(7);
@@ -1676,14 +1917,15 @@ function updatePickups(dt) {
           texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .95, max: .95, text: w.disposable ? `获得 ${w.name}（补给）` : `获得 ${w.name}`, color: w.disposable ? '#ffd166' : '#62a8ff' });
           audio.weaponPick();
         } else if (p.kind === 'ammo') {
-          player.ammoByWeapon.gun = (player.ammoByWeapon.gun || 0) + 36;
-          player.ammo = player.ammoByWeapon.gun;
-          if (player.weapon === 'melee' && player.autoBackToGun) {
-            player.weapon = 'gun';
+          const rw = roleDef().weapons[1];
+          player.ammoByWeapon[rw] = (player.ammoByWeapon[rw] || 0) + 36;
+          player.ammo = rangedAmmo();
+          if (player.weapon === roleDef().weapons[0] && player.autoBackToGun) {
+            player.weapon = rw;
             player.autoBackToGun = false;
-            texts.push({ x: player.x, y: player.y - 112, vy: -58, life: 1.0, max: 1.0, text: '已恢复手枪', color: '#62a8ff' });
+            texts.push({ x: player.x, y: player.y - 112, vy: -58, life: 1.0, max: 1.0, text: `已恢复${weapons[rw].name}`, color: '#62a8ff' });
           }
-          texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .9, max: .9, text: '+36 手枪子弹', color: '#ffd166' });
+          texts.push({ x: player.x, y: player.y - 88, vy: -64, life: .9, max: .9, text: `+36 ${weapons[rw].name}弹药`, color: '#ffd166' });
         } else if (p.kind === 'xp') {
           gainXP(p.val);
           audio.xp();
@@ -1734,6 +1976,42 @@ function gameOver() {
   ui.finalWave.textContent = Math.max(1, wave);
   ui.finalKills.textContent = kills;
   setTimeout(() => ui.dead.classList.remove('hidden'), 520);
+}
+
+// 局内技能：一技能为角色大招，罗琳的二技能为复制的其他角色技能
+function useSkill(slot) {
+  if (state !== 'playing' || !player) return;
+  const def = slot === 1 ? player.skill1Def : player.skill2Def;
+  const cdKey = slot === 1 ? 'skill1Cd' : 'skill2Cd';
+  const activeKey = slot === 1 ? 'skill1Active' : 'skill2Active';
+  if (!def || player[cdKey] > 0 || player[activeKey] > 0) return;
+  player[activeKey] = def.dur;
+  player[cdKey] = def.cd;
+  audio.levelup();
+  vibrate(70);
+  addShake(6);
+  texts.push({
+    x: player.x, y: player.y - 112, vy: -56, life: 1.2, max: 1.2,
+    text: def.name, color: slot === 1 ? '#ffd166' : '#b57bd6'
+  });
+  updateSkillBar();
+}
+
+// 当前生效中的技能数值汇总（伤害/攻速/移速/吸血/命中）
+function activeSkillMods() {
+  const mods = { dmg: 1, cd: 1, speed: 1, lifePct: 0, spread: 1 };
+  if (!player) return mods;
+  for (const key of ['skill1Active', 'skill2Active']) {
+    if (player[key] <= 0) continue;
+    const def = key === 'skill1Active' ? player.skill1Def : player.skill2Def;
+    if (!def) continue;
+    if (def.mods.dmg != null) mods.dmg *= def.mods.dmg;
+    if (def.mods.cd != null) mods.cd *= def.mods.cd;
+    if (def.mods.speed != null) mods.speed *= def.mods.speed;
+    if (def.mods.spread != null) mods.spread *= def.mods.spread;
+    if (def.mods.lifePct != null) mods.lifePct += def.mods.lifePct;
+  }
+  return mods;
 }
 
 function updateHud() {
@@ -1811,6 +2089,7 @@ function render() {
   drawForeground();
   drawSceneTint();
   drawVignette();
+  drawSkillFx();
   drawAmbient();
   if (state === 'playing' && player) drawCrosshair();
 }
@@ -2649,6 +2928,453 @@ function drawPickups() {
   }
 }
 
+// ===== 丧尸撕裂者 · 对照设定图重绘 =====
+// 白发爆炸乱发 + 低马尾 / 黑口罩 / 红瞳 / 酒红长风衣 + 红领带 + 黑腰带 / 黑裤黑靴
+// 默认武器：血爪（双手近战）· 血刃（远程）
+const RIP = {
+  hair: '#f6f2ea', hairMid: '#d9d3c5', hairDark: '#b0a897', hairLine: '#8c8577',
+  skin: '#f7dccb', skinShade: '#e3b9a4', skinLine: '#c99780',
+  eye: '#ff2f42', eyeDark: '#6f0d19', eyeHi: '#ffe3e7',
+  mask: '#14161c', maskMid: '#252a37', maskLine: '#3a4152',
+  coat: '#8f2432', coatDark: '#5a111d', coatDeep: '#390810', coatLight: '#b43c4b', coatHi: '#d45c67',
+  shirt: '#14161c', shirtHi: '#282d3a', tie: '#d63a34', tieDark: '#8f1f1d',
+  belt: '#0d0f15', buckle: '#d5dbe4', buckleDark: '#8b95a6',
+  pants: '#15171f', pantsHi: '#262b38', boot: '#0b0d12', bootHi: '#2b3040',
+  clawBase: '#12151d', clawPlate: '#242936', clawSeam: '#4d1220',
+  red: '#ff2c3f', redDark: '#a51627', redDeep: '#5e0a14', redHi: '#ffb6bd'
+};
+
+function ripPoly(g, pts, fill, stroke, lw) {
+  g.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (i === 0) g.moveTo(p[0], p[1]); else g.lineTo(p[0], p[1]);
+  }
+  g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) {
+    g.strokeStyle = stroke;
+    g.lineWidth = lw || 1;
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    g.stroke();
+  }
+}
+function ripEllipse(g, x, y, rx, ry, fill, rot) {
+  g.beginPath();
+  g.ellipse(x, y, rx, ry, rot || 0, 0, Math.PI * 2);
+  g.fillStyle = fill;
+  g.fill();
+}
+function ripEase(p) { return p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
+
+// 血爪：黑铁护手 + 三根血色能量刃（可放大、可发光）
+function drawBloodClaw(g, x, y, angle, scale, opts) {
+  opts = opts || {};
+  g.save();
+  g.translate(x, y);
+  g.rotate(angle);
+  g.scale(scale, scale);
+  const s = opts.blades || 3;
+  // 护手 / 前臂
+  ripPoly(g, [[-12, -5.4], [-4, -7], [6, -6.4], [9, -2.6], [8, 4], [1, 6.4], [-8, 5.4], [-12, 1.4]], RIP.clawBase, '#05070b', 1);
+  ripPoly(g, [[-7, -4.2], [2, -5.2], [5, -2], [2, 1.4], [-5, 1.4], [-8, -1.2]], RIP.clawPlate);
+  g.fillStyle = RIP.clawSeam;
+  g.fillRect(-2.4, -6.2, 1.8, 12.2);
+  g.fillStyle = '#3b4354';
+  g.fillRect(-8.6, -1.2, 17, 1.2);
+  for (let i = 0; i < 3; i++) {
+    g.fillStyle = '#6e788c';
+    g.fillRect(0.4 + i * 2.4, -5.6, 1.3, 1.3);
+  }
+  g.fillStyle = '#8f99ab';
+  g.fillRect(-10.2, -2.4, 2.6, 1.2);
+  // 能量刃
+  if (opts.glow !== false) {
+    g.shadowColor = 'rgba(255,44,63,.8)';
+    g.shadowBlur = opts.bladeGlow || 9;
+  }
+  for (let i = 0; i < s; i++) {
+    const by = -5.4 + i * 5.3;
+    const len = 24 + (i === 1 ? 7 : 0) + (opts.long || 0);
+    const tipY = by - 4 - i * 1.1;
+    g.beginPath();
+    g.moveTo(2, by - 1.8);
+    g.quadraticCurveTo(len * .45, by - 6 - i * 1.1, len, tipY);
+    g.quadraticCurveTo(len - 2.4, tipY + 2.4, len * .52, by + 2);
+    g.quadraticCurveTo(6, by + 3.4, 2, by + 2.4);
+    g.closePath();
+    g.fillStyle = i === 1 ? RIP.red : RIP.redDark;
+    g.fill();
+    g.shadowBlur = 0;
+    g.strokeStyle = RIP.redDeep;
+    g.lineWidth = .8;
+    g.stroke();
+    g.strokeStyle = RIP.redHi;
+    g.lineWidth = .7;
+    g.beginPath();
+    g.moveTo(6, by - .2);
+    g.quadraticCurveTo(len * .5, by - 3.6 - i, len - 4, tipY + .8);
+    g.stroke();
+    if (opts.glow !== false) g.shadowBlur = opts.bladeGlow || 9;
+  }
+  g.shadowBlur = 0;
+  if (opts.spark) {
+    g.fillStyle = 'rgba(255,120,135,.7)';
+    g.beginPath(); g.arc(28, -3, 2.4, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+// 低马尾：向身后飘动
+function drawRipPonytail(g, t, wind) {
+  const s = Math.sin(t * 1.7) * 2.2 + wind;
+  g.save();
+  g.save();
+  g.translate(-13, 2.4);
+  g.rotate(-.55);
+  g.fillStyle = RIP.coatDeep;
+  g.fillRect(-2.4, -2, 7, 3.4);
+  g.fillStyle = '#7d2a33';
+  g.fillRect(-1.2, -1.2, 4.6, 1);
+  g.restore();
+  for (let i = 0; i < 3; i++) {
+    const ox = i * 2.2;
+    ripPoly(g, [
+      [-12 - ox * .2, 2 + i * .6], [-6 - ox * .3, 1 + i * .8],
+      [-16 - ox, 12 + s + i], [-25 - ox, 27 + s * 1.4 + i * 1.4],
+      [-29 - ox, 24 + s * 1.2 + i], [-11 - ox, 8 + s * .4]
+    ], i === 0 ? RIP.hairMid : RIP.hair, RIP.hairLine, .6);
+  }
+  g.strokeStyle = 'rgba(255,255,255,.3)';
+  g.lineWidth = .7;
+  g.beginPath(); g.moveTo(-9, 5); g.quadraticCurveTo(-19, 14, -27, 26 + s); g.stroke();
+  g.restore();
+}
+
+// 红瞳：expression = cold / contempt / angry / smirk
+function drawRipEye(g, x, y, flip, expression, t) {
+  g.save();
+  g.translate(x, y);
+  g.scale(flip, 1);
+  const glow = .55 + Math.sin(t * 2.3 + x * .1) * .08;
+  let w = 6.2, top = -4, bot = 2.6;
+  if (expression === 'contempt') { w = 6.4; top = -2.9; bot = 1.8; }
+  else if (expression === 'angry') { w = 6.8, top = -4.8, bot = 3; }
+  else if (expression === 'smirk') { w = 6.3; top = -2.5; bot = 1.3; }
+  g.shadowColor = `rgba(255,42,60,${glow})`;
+  g.shadowBlur = 6;
+  g.beginPath();
+  g.moveTo(-w, .5);
+  g.quadraticCurveTo(-w * .35, top * 1.7, w * .38, top * .75);
+  g.quadraticCurveTo(w, -top * .25, w, .3);
+  g.quadraticCurveTo(w * .3, bot, -w * .2, bot * .4);
+  g.closePath();
+  g.fillStyle = RIP.eye;
+  g.fill();
+  g.shadowBlur = 0;
+  g.fillStyle = RIP.eyeDark;
+  g.fillRect(-1.8, -2.6, 3.6, 1.1);
+  g.fillRect(-.7, -2.6, 1.4, 3.4);
+  g.fillStyle = RIP.eyeHi;
+  g.fillRect(w * .2, -1.6, 1.6, 1.5);
+  // 上眼睑
+  g.strokeStyle = 'rgba(60,20,24,.85)';
+  g.lineWidth = 1.1;
+  g.beginPath();
+  g.moveTo(-w * .95, -.2);
+  g.quadraticCurveTo(-w * .3, top * 1.9, w * .9, -.4);
+  g.stroke();
+  // 眉毛
+  g.strokeStyle = '#574f45';
+  g.lineWidth = 1.7;
+  g.lineCap = 'round';
+  g.beginPath();
+  if (expression === 'angry') {
+    g.moveTo(-w * 1.1, -7.6);
+    g.lineTo(w * .9, -5.2);
+  } else if (expression === 'contempt') {
+    g.moveTo(-w * 1.05, -5.4);
+    g.quadraticCurveTo(0, -7.4, w * .95, -7.2);
+  } else if (expression === 'smirk') {
+    g.moveTo(-w * 1.05, -5.2);
+    g.quadraticCurveTo(0, -6.2, w * .95, -6.8);
+  } else {
+    g.moveTo(-w * 1.05, -5.6);
+    g.quadraticCurveTo(0, -6.2, w * .95, -6);
+  }
+  g.stroke();
+  g.restore();
+}
+
+// 头部（局部原点为头部中心）
+function drawRipperHead(g, view, expression, t) {
+  const wind = Math.sin(t * 1.15) * 1.1;
+  g.save();
+  // 后脑发量
+  ripPoly(g, [
+    [7, -30], [-2, -28], [-10, -30], [-13, -22], [-23, -20], [-18, -11],
+    [-27, -5], [-19, 2], [-21, 13], [-12, 9], [-8, 18], [-2, 11],
+    [5, 13], [10, 5], [17, 1], [12, -6], [19, -12], [11, -18]
+  ], RIP.hairMid, RIP.hairLine, .8);
+  ripPoly(g, [[-8, -22], [-2, -27], [6, -26], [10, -19], [2, -15], [-6, -16]], 'rgba(255,255,255,.25)');
+  // 脸
+  ripPoly(g, [[-4, -7], [-1, -16], [8, -17], [14, -10], [14, 3], [8, 13], [0, 15], [-5, 8]], RIP.skin, RIP.skinLine, .8);
+  ripPoly(g, [[-4, -5], [-1, -10], [2, -13], [1, 2], [-1, 8]], RIP.skinShade);
+  // 口罩只遮下半脸
+  ripPoly(g, [[-5, 1], [0, -1], [8, -1], [15, 2], [14, 8], [8, 15], [0, 15], [-5, 8]], RIP.mask, '#080a0e', .7);
+  g.fillStyle = RIP.maskMid;
+  g.fillRect(-1, 1.2, 15, 1.2);
+  g.fillStyle = RIP.maskLine;
+  g.fillRect(4.6, -1, 1.2, 4);
+  g.strokeStyle = 'rgba(92,102,124,.3)';
+  g.lineWidth = .6;
+  g.beginPath(); g.moveTo(-1, 7); g.quadraticCurveTo(5, 11, 12, 6); g.stroke();
+  g.fillStyle = RIP.mask;
+  g.fillRect(-8, -2.4, 4, 2.4);
+  // 眼（放大上移）
+  drawRipEye(g, 9, -6, 1, expression, t);
+  // 刘海（收在眉毛上方）
+  ripPoly(g, [
+    [-10, -12], [-7, -21], [-2, -15], [2, -23], [7, -16],
+    [12, -22], [16, -13], [11, -8], [7, -11], [3, -8],
+    [-1, -11], [-5, -8]
+  ], RIP.hair, RIP.hairLine, .7);
+  ripPoly(g, [[-8, -15], [-4, -9], [-1, -13], [-3, -6], [-6, -8]], RIP.hairMid);
+  // 鬓发
+  ripPoly(g, [[-10, -8], [-16, -3], [-16, 7], [-12, 12], [-9, 5], [-9, -2]], RIP.hair, RIP.hairLine, .6);
+  g.strokeStyle = 'rgba(160,152,134,.55)';
+  g.lineWidth = .6;
+  g.beginPath(); g.moveTo(-11, -3); g.quadraticCurveTo(-14, 4, -12, 10); g.stroke();
+  drawRipPonytail(g, t, wind);
+  g.restore();
+}
+
+// 侧视腿部
+function drawRipSideLeg(g, hipX, footX, lift, back) {
+  const hipY = -38;
+  const ankleY = -7 - lift;
+  const kneeX = hipX + (footX - hipX) * .42 + (back ? -1.2 : 1.2);
+  ripPoly(g, [
+    [hipX - 4.6, hipY], [hipX + 4.6, hipY],
+    [kneeX + 4.2, -21], [footX + 3.8, ankleY],
+    [footX - 3.8, ankleY], [kneeX - 4.2, -21]
+  ], back ? '#101219' : RIP.pants, '#07090d', .8);
+  g.strokeStyle = back ? 'rgba(110,120,140,.12)' : 'rgba(130,142,166,.24)';
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(kneeX - 2, -22);
+  g.lineTo(footX - 2, ankleY + 1);
+  g.stroke();
+  const bx = footX;
+  ripPoly(g, [
+    [bx - 5.2, ankleY - 1], [bx + 4.4, ankleY - 1],
+    [bx + 6.4, ankleY + 3.5], [bx + 11, -1.2], [bx + 10.2, 0],
+    [bx - 6.4, 0], [bx - 6.2, ankleY + 2]
+  ], back ? '#080a0f' : RIP.boot, '#04060a', .8);
+  g.fillStyle = back ? 'rgba(255,255,255,.06)' : 'rgba(255,255,255,.15)';
+  g.fillRect(bx - 3, ankleY + .4, 7, .9);
+  g.fillStyle = back ? '#161a23' : '#343b4d';
+  g.fillRect(bx - 5, ankleY + 2.2, 8, 1);
+}
+
+// 侧视手臂
+function drawRipSideArm(g, sx, sy, hx, hy, back) {
+  ripPoly(g, [
+    [sx - 4.2, sy], [sx + 4.2, sy],
+    [hx + 3.6, hy + 1.2], [hx - 3.6, hy - .8]
+  ], back ? RIP.coatDark : RIP.coat, RIP.coatDeep, .8);
+  g.fillStyle = back ? '#3d0a12' : '#c24a58';
+  g.fillRect(hx - 3.8, hy - 2.2, 7.4, 3);
+  if (!back) {
+    g.fillStyle = 'rgba(255,255,255,.16)';
+    g.fillRect(hx - 2, hy - 1.6, 3.5, .8);
+  }
+}
+
+// 侧视身体
+function drawRipSide(g, o) {
+  const { t, expression, pose, ap, sway, aim, walkPhase } = o;
+  const stride = pose === 'walk' ? Math.sin(walkPhase) * 5.2 : 0;
+  const liftF = pose === 'walk' ? Math.max(0, Math.sin(walkPhase)) * 2.6 : 0;
+  const liftB = pose === 'walk' ? Math.max(0, -Math.sin(walkPhase)) * 2.6 : 0;
+  const backLegX = -6 - stride;
+  const frontLegX = 4 + stride;
+
+  // 后摆风衣
+  ripPoly(g, [
+    [-11, -58], [-2, -52], [-1, -40], [-6, -18], [-14, -6],
+    [-23, -9], [-25, -24], [-20, -42], [-16, -52]
+  ], RIP.coatDark, RIP.coatDeep, .9);
+  ripPoly(g, [[-7, -50], [-1, -46], [-4, -24], [-11, -10], [-18, -12], [-19, -28], [-14, -44]], 'rgba(180,60,75,.18)');
+
+  drawRipSideLeg(g, -5, backLegX, liftB, true);
+  drawRipSideLeg(g, 5, frontLegX, liftF, false);
+
+  // 躯干风衣
+  ripPoly(g, [[-13, -71], [10, -71], [14, -50], [8, -33], [-10, -33], [-15, -50]], RIP.coat, RIP.coatDeep, 1);
+  ripPoly(g, [[-13, -70], [-5, -71], [-3, -34], [-10, -34], [-15, -50]], RIP.coatDark);
+  ripPoly(g, [[7, -71], [14, -69], [14, -49], [8, -33], [4, -39], [7, -52]], RIP.coatLight);
+  g.fillStyle = 'rgba(255,255,255,.13)';
+  g.fillRect(9, -66, 1.2, 20);
+  // 内衬
+  ripPoly(g, [[-5, -71], [8, -71], [7, -55], [2, -49], [-4, -55]], RIP.shirt, '#080a0e', .8);
+  g.fillStyle = RIP.shirtHi;
+  g.fillRect(-2, -68, 1, 12);
+  // 领带
+  ripPoly(g, [[1, -69], [5.4, -69], [5.2, -64], [3.2, -61], [1.2, -64]], RIP.tieDark);
+  ripPoly(g, [[2, -62], [4.6, -62], [6.2, -47], [3.4, -43], [1.2, -47]], RIP.tie, '#7d1817', .6);
+  g.fillStyle = 'rgba(255,255,255,.18)';
+  g.fillRect(3, -60, .8, 13);
+  // 腰带
+  g.fillStyle = RIP.belt;
+  g.fillRect(-13.5, -50, 27, 5);
+  g.fillStyle = '#242936';
+  g.fillRect(-13.5, -50, 27, 1);
+  g.fillStyle = RIP.buckle;
+  g.fillRect(-.5, -49.2, 6.5, 4);
+  g.fillStyle = RIP.buckleDark;
+  g.fillRect(1, -48.2, 3.5, 2);
+  // 立领
+  ripPoly(g, [[-12, -71], [-6, -78], [-1, -71], [5, -78], [12, -70], [8, -65], [1, -69], [-5, -66]], RIP.coatDark, RIP.coatDeep, .8);
+  ripPoly(g, [[-2, -72], [2, -72], [4, -67], [-2, -67]], '#2a0b10');
+  // 下摆开衩
+  ripPoly(g, [[-10, -34], [7, -33], [5, -27], [-1, -29]], RIP.coatDeep);
+
+  // 后臂 / 后爪
+  let backHandX = -10 - sway * .6;
+  let backHandY = -54 + Math.abs(Math.sin(t * 2.1)) * .8;
+  drawRipSideArm(g, -3, -66, backHandX, backHandY, true);
+  drawBloodClaw(g, backHandX, backHandY, 2.35, .92, { glow: true, bladeGlow: 6 });
+
+  // 前臂 / 主爪
+  let armA = aim;
+  if (pose === 'attack') armA = -1.35 + ripEase(ap) * 2.5;
+  else if (pose === 'thrust') armA = .05 + Math.sin(ap * Math.PI) * .06;
+  else if (pose === 'storm') armA = -.45 + Math.sin(t * 9) * 1.15;
+  else if (pose === 'hurt') armA = -.95;
+  else if (pose === 'walk') armA = aim + Math.sin(walkPhase) * .26;
+  const hx = 5 + Math.cos(armA) * 17;
+  const hy = -64 + Math.sin(armA) * 17;
+  drawRipSideArm(g, 5, -67, hx, hy, false);
+  drawBloodClaw(g, hx, hy, armA + .12, 1.04, { glow: true, bladeGlow: 10, spark: pose === 'attack' || pose === 'thrust' });
+
+  // 攻击 / 技能特效
+  if (pose === 'attack') {
+    const a0 = -1.25;
+    const a1 = -1.35 + ripEase(ap) * 2.5;
+    g.save();
+    g.translate(6, -60);
+    for (let i = 0; i < 3; i++) {
+      g.strokeStyle = `rgba(255,${55 + i * 18},${75 + i * 15},${.5 - i * .12})`;
+      g.lineWidth = 9 - i * 2.6;
+      g.beginPath();
+      g.arc(0, 0, 42 + i * 5, Math.min(a0, a1), Math.max(a0, a1));
+      g.stroke();
+    }
+    g.restore();
+  } else if (pose === 'thrust') {
+    const k = Math.sin(ap * Math.PI);
+    g.save();
+    g.globalAlpha = k * .55;
+    g.strokeStyle = '#ff5a6e';
+    g.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const y = -70 + i * 9;
+      g.beginPath();
+      g.moveTo(-30 - i * 6, y);
+      g.lineTo(-6 - i * 2, y);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(255,90,110,.55)';
+    g.beginPath(); g.arc(hx + 22, hy - 2, 6 + k * 5, 0, Math.PI * 2); g.fill();
+    g.restore();
+  } else if (pose === 'storm') {
+    g.save();
+    g.translate(2, -52);
+    for (let i = 0; i < 4; i++) {
+      const r = 30 + i * 11;
+      const a = t * 7 + i * 1.3;
+      g.strokeStyle = `rgba(255,${40 + i * 14},${58 + i * 12},${.34 - i * .06})`;
+      g.lineWidth = 5 - i * .8;
+      g.beginPath();
+      g.arc(0, 0, r, a, a + 1.5);
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(255,44,63,.10)';
+    g.beginPath(); g.arc(0, 0, 52, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+  if (pose === 'storm') {
+    g.fillStyle = 'rgba(255,44,63,.10)';
+    g.beginPath(); g.ellipse(0, -2, 34, 8, 0, 0, Math.PI * 2); g.fill();
+  }
+
+  // 头部
+  g.save();
+  g.translate(2 + sway * .25, -86);
+  drawRipperHead(g, 'side', expression, t);
+  g.restore();
+}
+
+
+// 统一入口
+function drawRipper(g, opts) {
+  if (opts === true) opts = { preview: true };
+  opts = opts || {};
+  const preview = !!opts.preview;
+  const view = opts.view || 'side';
+  const t = opts.t != null ? opts.t : globalTime;
+  const p = typeof player !== 'undefined' ? player : null;
+  const explicit = opts.pose != null;
+  let pose = opts.pose;
+  if (!pose) {
+    if (preview) pose = 'idle';
+    else {
+      pose = (p && p.hurtFlash > .12) ? 'hurt'
+        : (p && p.skill1Active > 0) ? 'storm'
+          : (p && p.swing > 0) ? 'attack'
+            : (p && p.moving) ? 'walk'
+              : 'idle';
+    }
+  }
+  let ap = opts.ap;
+  if (ap == null) {
+    if (pose === 'attack') ap = explicit ? (t * 1.5) % 1 : clamp(1 - (p ? p.swing : 0) / .24, 0, 1);
+    else if (pose === 'thrust' || pose === 'storm') ap = (t * 1.1) % 1;
+    else ap = 0;
+  }
+  const aim = opts.aim != null ? opts.aim : .22;
+  const expression = opts.expression || 'cold';
+  const walkPhase = opts.walkPhase != null ? opts.walkPhase
+    : (pose === 'walk' ? (explicit ? t * 8 : (p ? p.anim : t * 8)) : 0);
+  const bob = pose === 'walk' ? Math.abs(Math.sin(walkPhase)) * 1.5 : Math.sin(t * 2.1) * 1.1;
+  const sway = Math.sin(t * 1.45);
+
+  g.save();
+  if (opts.scale) g.scale(opts.scale, opts.scale);
+  const lean = pose === 'hurt' ? -.055 : pose === 'thrust' ? Math.sin(ap * Math.PI) * .03 : 0;
+  if (lean) g.rotate(lean);
+  if (pose === 'thrust') g.translate(Math.sin(ap * Math.PI) * 3.5, 0);
+  if (pose === 'storm') g.rotate(Math.sin(t * 6) * .035);
+  g.translate(0, -bob);
+  drawRipSide(g, { t, expression, pose, ap, bob, sway, aim, walkPhase, moving: pose === 'walk' });
+  g.restore();
+}
+
+// 武器层（保留兼容；撕裂者本体已自带双爪）
+function drawClawArt(flash) {
+  ctx.save();
+  drawBloodClaw(ctx, 6, 0, 0, 1.2, { glow: true, bladeGlow: 9 });
+  if (flash > 0) {
+    ctx.fillStyle = 'rgba(255,70,90,.3)';
+    ctx.beginPath(); ctx.arc(30, -2, 14, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+
+
 // ===== 怪物形象绘制（按类型定制的矢量形象，local 坐标 y=0 为脚底，+x 为朝向） =====
 function paintWalker(z) {
   const hurt = z.hurt > 0;
@@ -3055,7 +3781,8 @@ function drawGunArt(name, flash) {
     '手枪': { len: 44, h: 13, body: '#27313f', dark: '#11161f', accent: '#aabfdf', barrel: 14, grip: 15, mag: 0 },
     '冲锋枪': { len: 58, h: 14, body: '#233127', dark: '#101815', accent: '#7ee081', barrel: 20, grip: 18, mag: 17 },
     '霰弹枪': { len: 66, h: 16, body: '#3a2c26', dark: '#171210', accent: '#ff9d5a', barrel: 32, grip: 19, pump: true },
-    '步枪': { len: 82, h: 15, body: '#1e2937', dark: '#0f141c', accent: '#62a8ff', barrel: 46, grip: 20, scope: true }
+    '步枪': { len: 82, h: 15, body: '#1e2937', dark: '#0f141c', accent: '#62a8ff', barrel: 46, grip: 20, scope: true },
+    '血刃': { len: 50, h: 12, body: '#1c0d12', dark: '#12070a', accent: '#ff3d55', barrel: 26, grip: 13, clawBlade: true }
   })[name] || { len: 46, h: 13, body: '#28313f', dark: '#131821', accent: '#aabfdf', barrel: 15, grip: 15 };
   ctx.save();
   ctx.lineCap = 'round';
@@ -3085,6 +3812,23 @@ function drawGunArt(name, flash) {
   if (cfg.mag) { ctx.fillStyle = cfg.dark; rr(ctx, cfg.len * .28, cfg.h * .42, 11, cfg.mag, 3); ctx.fill(); ctx.fillStyle = cfg.accent; ctx.fillRect(cfg.len * .3, cfg.h * .45, 2, cfg.mag - 5); }
   if (cfg.pump) { ctx.fillStyle = '#d99a58'; rr(ctx, cfg.len * .42, -9, 16, 8, 3); ctx.fill(); ctx.fillStyle = '#7d4a22'; rr(ctx, cfg.len * .42, -2.5, 16, 2, 1); ctx.fill(); }
   if (cfg.scope) { ctx.strokeStyle = '#0e131b'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cfg.len * .18, -cfg.h * .62); ctx.lineTo(cfg.len * .64, -cfg.h * .62); ctx.stroke(); ctx.strokeStyle = cfg.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cfg.len * .2, -cfg.h * .62); ctx.lineTo(cfg.len * .62, -cfg.h * .62); ctx.stroke(); ctx.fillStyle = '#0d121a'; ctx.beginPath(); ctx.arc(cfg.len * .68, -cfg.h * .62, 5, 0, Math.PI * 2); ctx.fill(); }
+  if (cfg.clawBlade) {
+    // 血刃持械：手臂末端延伸出一道弯血刃
+    ctx.fillStyle = '#ff2d4a';
+    ctx.beginPath();
+    ctx.moveTo(cfg.len * .72, -3);
+    ctx.quadraticCurveTo(cfg.len * .95, -13, cfg.len + 22, -7);
+    ctx.quadraticCurveTo(cfg.len * .96, -1, cfg.len * .74, 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,190,200,.55)';
+    ctx.beginPath();
+    ctx.moveTo(cfg.len * .76, -2);
+    ctx.quadraticCurveTo(cfg.len * .92, -9, cfg.len + 18, -5);
+    ctx.quadraticCurveTo(cfg.len * .9, -2, cfg.len * .76, -2);
+    ctx.closePath();
+    ctx.fill();
+  }
   if (flash > 0) {
     const fx = cfg.len + cfg.barrel * .7;
     ctx.fillStyle = 'rgba(255,214,120,.28)';
@@ -3159,13 +3903,18 @@ function drawPlayer() {
   const handY = shoulderY + Math.sin(aim) * 20;
   ctx.save();
   ctx.scale(player.facing, 1);
-  if (sprites.player.ready) {
+  if (roleId() === 'ripper') {
+    drawRipper(ctx, { aim: player.facing > 0 ? aim : Math.PI - aim, t: globalTime });
+  } else if (sprites.player.ready) {
     const sprite = sprites.player.image;
     const naturalW = Number(sprite.naturalWidth || sprite.width) || 128;
     const naturalH = Number(sprite.naturalHeight || sprite.height) || 128;
     const targetH = 112;
     const targetW = naturalW * targetH / naturalH;
+    const charFilter = characterFilter();
+    if (charFilter) ctx.filter = charFilter;
     ctx.drawImage(sprite, -targetW / 2, -targetH, targetW, targetH);
+    if (charFilter) ctx.filter = 'none';
   } else {
     ctx.strokeStyle = '#26313f';
     ctx.lineWidth = 11;
@@ -3186,24 +3935,24 @@ function drawPlayer() {
     rr(ctx, -3, -86 - bob * .4, 6, 5, 2); ctx.fill();
   }
   ctx.restore();
-  ctx.strokeStyle = '#f4c49b';
-  ctx.lineWidth = 6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(shoulderX, shoulderY); ctx.lineTo(handX, handY);
-  ctx.stroke();
   ctx.save();
   ctx.translate(shoulderX, shoulderY);
   ctx.rotate(aim);
   if (w.kind === 'gun') {
     drawGunArt(w.name, player.flash);
+  } else if (w.claw) {
+    // 撕裂者的双爪由 drawRipper 按瞄准方向绘制，这里只补一层爪尖能量闪光
+    if (player.flash > 0) {
+      ctx.fillStyle = 'rgba(255,70,90,.32)';
+      ctx.beginPath(); ctx.arc(34, 0, 16, 0, Math.PI * 2); ctx.fill();
+    }
   } else {
     const sw = player.swing > 0 ? player.swing / .24 : 0;
     ctx.rotate(-((1 - sw) * .9));
     drawMeleeArt(w.name);
   }
   ctx.restore();
-  if (player.swing > 0 && player.weapon === 'melee') {
+  if (player.swing > 0 && player.weapon === 'melee' && roleId() !== 'ripper') {
     ctx.save();
     ctx.translate(shoulderX, shoulderY);
     ctx.rotate(aim);
@@ -3238,6 +3987,49 @@ function drawBullets() {
   ctx.lineCap = 'round';
   for (const b of bullets) {
     const col = b.color || (b.enemy ? '#9dff66' : '#fff6c8');
+    if (b.kind === 'blade') {
+      // 撕裂者血刃：三重新月弧形血刃 + 血雾残留
+      const a = Math.atan2(b.vy, b.vx);
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(a);
+      ctx.fillStyle = 'rgba(255,50,72,.16)';
+      ctx.beginPath(); ctx.ellipse(-6, 0, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowColor = 'rgba(255,45,74,.85)';
+      ctx.shadowBlur = 12;
+      const crescents = [[0, 1], [-9, .74], [-17, .48]];
+      for (const [ox, sc] of crescents) {
+        ctx.save();
+        ctx.translate(ox, 0);
+        ctx.scale(sc, sc);
+        ctx.fillStyle = ox === 0 ? '#ff2d4a' : (ox === -9 ? '#d61f39' : 'rgba(190,26,48,.75)');
+        ctx.beginPath();
+        ctx.moveTo(-12, -7);
+        ctx.quadraticCurveTo(2, -16, 17, -5);
+        ctx.quadraticCurveTo(11, 0, 17, 5);
+        ctx.quadraticCurveTo(2, 16, -12, 7);
+        ctx.quadraticCurveTo(-6, 0, -12, -7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,190,198,.78)';
+      ctx.beginPath();
+      ctx.moveTo(-11, -4);
+      ctx.quadraticCurveTo(2, -9, 13, -3);
+      ctx.quadraticCurveTo(2, -2, -11, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,110,130,.32)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-22, -6); ctx.lineTo(-6, -2);
+      ctx.moveTo(-22, 6); ctx.lineTo(-6, 2);
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
     const glow = b.enemy ? 'rgba(120,255,90,.22)' : 'rgba(255,224,138,.22)';
     ctx.strokeStyle = glow;
     ctx.lineWidth = 6;
@@ -3292,6 +4084,42 @@ function drawCrosshair() {
   ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.9)';
   ctx.fillRect(-1.5, -1.5, 3, 3);
+  ctx.restore();
+}
+
+// 技能激活表现：角色脚下旋转光环 + 屏幕边缘能量描边
+function drawSkillFx() {
+  if (!player) return;
+  const actives = [];
+  if (player.skill1Active > 0) actives.push({ t: player.skill1Active, def: player.skill1Def, color: '#ffd166' });
+  if (player.skill2Active > 0) actives.push({ t: player.skill2Active, def: player.skill2Def, color: '#cf9de8' });
+  if (!actives.length) return;
+  const intensity = clamp(actives[0].t / (actives[0].def.dur || 1), 0, 1);
+  // 脚下旋转光环
+  ctx.save();
+  ctx.translate(player.x, player.y + 2);
+  ctx.rotate(globalTime * 1.4);
+  for (const ring of [0, 1]) {
+    ctx.globalAlpha = .35 * intensity + .1;
+    ctx.strokeStyle = actives[ring] ? actives[ring].color : actives[0].color;
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 34 + ring * 12, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.globalAlpha = .16 * intensity + .05;
+  ctx.fillStyle = actives[0].color;
+  ctx.beginPath(); ctx.ellipse(0, 0, 40, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // 屏幕边缘能量描边
+  const pulse = .5 + .5 * Math.sin(globalTime * 8);
+  ctx.save();
+  ctx.globalAlpha = .25 * intensity + .1 * pulse;
+  ctx.strokeStyle = actives[0].color;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(3, 3, W - 6, H - 6);
   ctx.restore();
 }
 
@@ -3716,6 +4544,8 @@ document.addEventListener('visibilitychange', () => {
 
 ui.swapBtn.addEventListener('pointerdown', e => { e.preventDefault(); switchWeapon(); });
 ui.touchPauseBtn.addEventListener('pointerdown', e => { e.preventDefault(); togglePause(); });
+if (ui.skill1Btn) ui.skill1Btn.addEventListener('pointerdown', e => { e.preventDefault(); useSkill(1); });
+if (ui.skill2Btn) ui.skill2Btn.addEventListener('pointerdown', e => { e.preventDefault(); useSkill(2); });
 
 if (ui.weaponBar) {
   ui.weaponBar.addEventListener('pointerdown', e => {
@@ -3851,6 +4681,8 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyR' && state === 'dead') resetGame();
   if (e.code === 'KeyM') toggleMute();
   if (e.code === 'KeyB') toggleMusic();
+  if (e.code === 'KeyK') useSkill(1);
+  if (e.code === 'KeyL') useSkill(2);
   if (e.code === 'Escape' && state === 'playing') togglePause();
 });
 addEventListener('keyup', e => {
@@ -3894,6 +4726,78 @@ document.querySelectorAll('.lobby-actions [data-lobby-view]').forEach(btn => {
     if (currentLobbyView === btn.dataset.lobbyView) showLobbyView('levelView');
     else showLobbyView(btn.dataset.lobbyView);
   });
+});
+
+// 角色定制面板事件
+document.getElementById('charHue')?.addEventListener('input', e => { character.hue = Number(e.target.value); saveCharacter(); renderCharacterPanel(); });
+document.getElementById('charSat')?.addEventListener('input', e => { character.sat = Number(e.target.value); saveCharacter(); renderCharacterPanel(); });
+document.getElementById('charBright')?.addEventListener('input', e => { character.bright = Number(e.target.value); saveCharacter(); renderCharacterPanel(); });
+document.getElementById('charResetBtn')?.addEventListener('click', () => {
+  Object.assign(character, CHAR_PRESETS[0]);
+  saveCharacter();
+  renderCharacterPanel();
+});
+document.getElementById('charPresets')?.addEventListener('click', e => {
+  const btn = e.target && e.target.closest ? e.target.closest('.char-preset') : null;
+  if (!btn || !btn.dataset.preset) return;
+  const preset = CHAR_PRESETS.find(p => p.name === btn.dataset.preset);
+  if (!preset) return;
+  Object.assign(character, preset);
+  saveCharacter();
+  renderCharacterPanel();
+});
+// 选择角色
+document.getElementById('roleCards')?.addEventListener('click', e => {
+  const btn = e.target && e.target.closest ? e.target.closest('.role-card') : null;
+  if (!btn || btn.disabled) return;
+  const id = btn.dataset.role;
+  if (!CHARACTERS[id] || id === roleId()) return;
+  currentRoleId = id;
+  if (CHARACTERS[id].noCopy) copiedSkillId = null;
+  saveRole();
+  saveCopiedSkill();
+  audio.weaponPick();
+  renderCharacterPanel();
+});
+// 复制技能（罗琳二技能）
+document.getElementById('roleSkills')?.addEventListener('click', e => {
+  const btn = e.target && e.target.closest ? e.target.closest('[data-copy]') : null;
+  if (!btn) return;
+  copiedSkillId = copiedSkillId === btn.dataset.copy ? null : btn.dataset.copy;
+  saveCopiedSkill();
+  audio.pickup();
+  renderCharacterPanel();
+});
+document.getElementById('charExportBtn')?.addEventListener('click', () => {
+  const code = characterCode();
+  const hint = document.getElementById('charHint');
+  let copied = false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(() => {
+      if (hint) hint.textContent = `分享码已复制：${code}`;
+    }).catch(() => {
+      if (hint) hint.textContent = `分享码：${code}（长按可复制）`;
+    });
+    copied = true;
+  }
+  if (!copied && hint) hint.textContent = `分享码：${code}（长按可复制）`;
+});
+document.getElementById('charImportBtn')?.addEventListener('click', () => {
+  const input = document.getElementById('charCodeInput');
+  const hint = document.getElementById('charHint');
+  if (!input) return;
+  input.classList.toggle('hidden');
+  if (input.classList.contains('hidden') && input.value.trim()) {
+    if (applyCharacterCode(input.value)) {
+      if (hint) hint.textContent = '形象已导入并保存';
+      renderCharacterPanel();
+    } else if (hint) {
+      hint.textContent = '分享码格式不正确，应为类似 a-2s-64 的三段编码';
+    }
+    input.value = '';
+  } else if (hint) {
+    hint.textContent = '粘贴分享码后再次点击「导入分享码」';
+  }
 });
 ui.restartLevelBtn.addEventListener('click', () => resetGame(currentLevel));
 ui.levelLobbyBtn.addEventListener('click', enterLobby);
@@ -3970,7 +4874,7 @@ function renderUpgradePanel() {
   const eqs = equipStats();
   const cs = critStats();
   if (ui.statHp) ui.statHp.textContent = String(Math.round(100 + eqs.hp));
-  if (ui.statAtk) ui.statAtk.textContent = fmtPct(eqs.atkPct);
+  if (ui.statAtk) ui.statAtk.textContent = String(Math.round(100 + (eqs.atkPct - 100)));
   if (ui.statAs) ui.statAs.textContent = fmtPct(eqs.asPct);
   if (ui.statCrit) ui.statCrit.textContent = fmtPct(cs.rate * 100);
   if (ui.statCritDmg) ui.statCritDmg.textContent = fmtPct(cs.dmg * 100);
@@ -4245,6 +5149,7 @@ renderLevelCarousel();
 showLobbyView('levelView', true);
 syncSettingsUI();
 updateBestUI();
+updateSkillBar();
 resizeCanvas();
 resetGame();
 showMenu();

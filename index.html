@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261026e">
+  <link rel="stylesheet" href="style.css?v=20261031d">
 </head>
 <body>
   <main id="app">
@@ -62,7 +62,7 @@
 
       <section id="levelSelect" class="overlay hidden">
         <div id="lobbyTop" class="lobby-top">
-          <button id="avatarBtn" class="avatar-corner" aria-label="玩家头像与设置"><span id="avatarBtnImage" class="avatar-image"></span></button>
+          <button id="avatarBtn" class="avatar-corner" aria-label="玩家头像与设置"><span id="avatarBtnImage" class="avatar-image small"></span></button>
           <div class="player-id">
             <b id="playerName">玩家</b>
             <span id="playerLevel">LV 1</span>
@@ -136,7 +136,7 @@
                   <div class="up-char"><img src="assets/player.png" alt="角色形象" draggable="false"></div>
                   <div class="up-attrs">
                     <div class="stat-chip"><span>生命值</span><b id="statHp">100</b></div>
-                    <div class="stat-chip"><span>攻击力</span><b id="statAtk">100%</b></div>
+                    <div class="stat-chip"><span>攻击力</span><b id="statAtk">100</b></div>
                     <div class="stat-chip"><span>攻击速度</span><b id="statAs">100%</b></div>
                     <div class="stat-chip crit"><span>暴击率</span><b id="statCrit">5%</b></div>
                     <div class="stat-chip crit"><span>暴击伤害</span><b id="statCritDmg">150%</b></div>
@@ -187,6 +187,30 @@
               </div>
             </section>
 
+            <section id="characterView" class="lobby-page hidden">
+              <div class="panel character-panel">
+                <p class="kicker">角色</p>
+                <h1>选择幸存者</h1>
+                <div id="roleCards" class="role-cards"></div>
+                <div id="roleSkills" class="role-skills"></div>
+                <p class="equip-bag-title">形象定制</p>
+                <div class="char-stage"><canvas id="charPreview" width="200" height="200"></canvas></div>
+                <div class="char-presets" id="charPresets"></div>
+                <div class="char-sliders">
+                  <label class="slider">色调 <input id="charHue" type="range" min="0" max="360" value="0"><b id="charHueText">0°</b></label>
+                  <label class="slider">饱和度 <input id="charSat" type="range" min="40" max="200" value="100"><b id="charSatText">100%</b></label>
+                  <label class="slider">亮度 <input id="charBright" type="range" min="55" max="145" value="100"><b id="charBrightText">100%</b></label>
+                </div>
+                <div class="char-actions">
+                  <button id="charResetBtn" class="ghost small">恢复默认</button>
+                  <button id="charImportBtn" class="ghost small">导入分享码</button>
+                  <button id="charExportBtn" class="ghost small">导出分享码</button>
+                </div>
+                <p id="charHint" class="gacha-hint">配置自动保存在本机；换设备时可用分享码转移形象</p>
+                <input id="charCodeInput" class="player-name-input hidden" placeholder="粘贴分享码" maxlength="24">
+              </div>
+            </section>
+
             <section id="extrasView" class="lobby-page hidden">
               <div class="panel feature-panel locked-panel">
                 <p class="kicker">额外内容</p>
@@ -207,6 +231,7 @@
           <button id="upgradeBtn" class="ghost" data-lobby-view="upgradeView"><span class="nav-ico">🔺</span>升级</button>
           <button id="levelListBtn" class="ghost" data-lobby-view="levelView"><span class="nav-ico">🗺️</span>关卡</button>
           <button id="inventoryBtn" class="ghost" data-lobby-view="inventoryView"><span class="nav-ico">🎒</span>背包</button>
+          <button id="characterBtn" class="ghost" data-lobby-view="characterView"><span class="nav-ico">🧍</span>角色</button>
           <button id="extrasBtn" class="ghost" data-lobby-view="extrasView" disabled><span class="nav-ico">🗂️</span>扩展</button>
         </div>
       </section>
@@ -293,6 +318,10 @@
       </div>
 
       <div id="weaponBar" class="hidden"></div>
+      <div id="skillBar" class="hidden">
+        <button id="skill2Btn" class="skill-btn" aria-label="二技能"><i class="sk-ico"></i><span class="sk-cd"></span><em class="sk-key">L</em><i class="sk-ready"></i></button>
+        <button id="skill1Btn" class="skill-btn ult" aria-label="一技能 大招"><i class="sk-ico"></i><span class="sk-cd"></span><em class="sk-key">K</em><i class="sk-ready"></i></button>
+      </div>
       <div id="touchHint" class="hidden"><span>左手摇杆移动 · 另一只手按住屏幕任意位置瞄准射击</span></div>
     </div>
 
@@ -300,6 +329,6 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261026e" defer></script>
+  <script src="game.js?v=20261031d" defer></script>
 </body>
 </html>
