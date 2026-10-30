@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>末日横板：枪械与棍棒打丧尸</title>
-  <link rel="stylesheet" href="style.css?v=20261031d">
+  <link rel="stylesheet" href="style.css?v=20261101b">
 </head>
 <body>
   <main id="app">
@@ -211,16 +211,58 @@
               </div>
             </section>
 
-            <section id="extrasView" class="lobby-page hidden">
-              <div class="panel feature-panel locked-panel">
-                <p class="kicker">额外内容</p>
-                <h1>扩展关卡</h1>
-                <p class="feature-desc">扩展关卡暂未开放。</p>
-                <div class="feature-grid">
-                  <div class="feature-card locked"><b>挑战模式</b><span>🔒 未开放</span></div>
-                  <div class="feature-card locked"><b>每日任务</b><span>🔒 未开放</span></div>
-                  <div class="feature-card locked"><b>无尽尸潮</b><span>🔒 未开放</span></div>
+            <section id="coopView" class="lobby-page hidden">
+              <div class="panel coop-panel">
+                <p class="kicker">CO-OP · 双人尸潮</p>
+                <h1>联机作战</h1>
+                <p class="coop-sub">开一个房间，把房间码发给队友。<br>电脑、手机，同一个房间就能并肩打丧尸。</p>
+
+                <div class="coop-status" id="coopStatus" data-tone="info">尚未连接房间</div>
+
+                <div id="coopSetup" class="coop-grid">
+                  <div class="coop-card">
+                    <b>创建房间</b>
+                    <p>你当房主，推进关卡</p>
+                    <input id="coopName" class="coop-input" placeholder="你的名字" maxlength="8" autocomplete="off">
+                    <button id="coopCreateBtn" class="primary">创建房间</button>
+                  </div>
+                  <div class="coop-card">
+                    <b>加入房间</b>
+                    <p>输入队友发来的 5 位房间码</p>
+                    <input id="coopCode" class="coop-input coop-code-input" placeholder="房间码" maxlength="5"
+                      autocomplete="off" autocapitalize="characters" spellcheck="false">
+                    <button id="coopJoinBtn" class="ghost">加入房间</button>
+                  </div>
                 </div>
+
+                <div id="coopRoom" class="coop-room hidden">
+                  <div class="coop-code-box">
+                    <span>房间码</span>
+                    <strong id="coopRoomCode">-----</strong>
+                    <button id="coopCopyBtn" class="ghost small">复制</button>
+                  </div>
+                  <div id="coopPeers" class="coop-peers"></div>
+                  <div class="coop-room-actions">
+                    <select id="coopLevelSelect" class="coop-select"></select>
+                    <button id="coopStartBtn" class="primary">开始联机</button>
+                    <button id="coopLeaveBtn" class="ghost">离开房间</button>
+                  </div>
+                  <p id="coopHint" class="gacha-hint">房主点「开始联机」后，队友会自动进入同一关</p>
+                </div>
+
+                <details class="coop-advanced">
+                  <summary>高级 · 服务器地址 / 同机联机</summary>
+                  <label class="coop-field">
+                    <span>联机服务器</span>
+                    <input id="coopServer" class="coop-input" placeholder="留空 = 当前站点 /ws">
+                  </label>
+                  <div class="coop-advanced-actions">
+                    <button id="coopApplyServer" class="ghost small">应用地址</button>
+                    <button id="coopLocalBtn" class="ghost small">同机联机（免服务器）</button>
+                  </div>
+                  <p class="gacha-hint">手机联机：与电脑连同一个 Wi-Fi，在项目目录运行
+                    <code>node server/relay.js</code>，手机打开它打印的局域网地址。</p>
+                </details>
               </div>
             </section>
           </div>
@@ -232,7 +274,16 @@
           <button id="levelListBtn" class="ghost" data-lobby-view="levelView"><span class="nav-ico">🗺️</span>关卡</button>
           <button id="inventoryBtn" class="ghost" data-lobby-view="inventoryView"><span class="nav-ico">🎒</span>背包</button>
           <button id="characterBtn" class="ghost" data-lobby-view="characterView"><span class="nav-ico">🧍</span>角色</button>
-          <button id="extrasBtn" class="ghost" data-lobby-view="extrasView" disabled><span class="nav-ico">🗂️</span>扩展</button>
+          <button id="coopBtn" class="ghost" data-lobby-view="coopView"><span class="nav-ico">🔗</span>联机</button>
+        </div>
+      </section>
+
+      <section id="netWait" class="overlay hidden">
+        <div class="panel net-wait-panel">
+          <p class="kicker">CO-OP</p>
+          <h1>等待房主开始</h1>
+          <p id="netWaitText" class="coop-sub">已进入房间，房主选择关卡后开始</p>
+          <button id="netWaitLeave" class="ghost">离开房间</button>
         </div>
       </section>
 
@@ -329,6 +380,7 @@
   </main>
 
   <audio id="silence"></audio>
-  <script src="game.js?v=20261031d" defer></script>
+  <script src="net.js?v=20261101b" defer></script>
+  <script src="game.js?v=20261101b" defer></script>
 </body>
 </html>

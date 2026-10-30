@@ -320,7 +320,7 @@ const SKILL_DEFS = {
 let currentRoleId = (() => {
   try { const v = localStorage.getItem('zombie-role'); return CHARACTERS[v] ? v : 'luolin'; } catch (err) { return 'luolin'; }
 })();
-function roleId() { return currentRoleId; }
+function roleId() { return coopRoleOverride || currentRoleId; }
 function roleDef() { return CHARACTERS[roleId()]; }
 function saveRole() { try { localStorage.setItem('zombie-role', roleId()); } catch (err) { /* 忽略存储错误 */ } }
 let copiedSkillId = (() => {
@@ -408,6 +408,805 @@ let unlockedLevel = loadUnlocked();
 let currentLevel = levels[0];
 let levelConfig = levels[0];
 let selectedLevelIndex = 0;
+
+// ============================================================
+// 联机模块：房主权威 + 客户端镜像（PC / 手机互通）
+// host 正常跑 update 并 15Hz 广播快照；guest 20Hz 上报输入，只做渲染
+// ============================================================
+const coopLevels = [
+  {
+    id: 101, name: '联机 · 夜市围城', theme: 'night', scene: 'street', kind: 'coop',
+    totalWaves: 5, air: true, crates: true, coop: true,
+    spec: { kind: 'coop', chapter: CHAPTERS[0], smallPool: ['walker', 'runner'], elitePool: ['brute'] }
+  },
+  {
+    id: 102, name: '联机 · 雨夜车站', theme: 'night', scene: 'metro', kind: 'coop',
+    totalWaves: 6, air: true, crates: true, coop: true,
+    spec: { kind: 'coop', chapter: CHAPTERS[1], smallPool: ['walker', 'runner', 'spitter'], elitePool: ['brute', 'spitter'] }
+  },
+  {
+    id: 103, name: '联机 · 暗河决战', theme: 'night', scene: 'sewer', kind: 'coop',
+    totalWaves: 7, air: true, crates: true, coop: true,
+    spec: { kind: 'coop', chapter: CHAPTERS[5], smallPool: ['walker', 'crawler', 'wraith'], elitePool: ['hammer'] }
+  }
+];
+
+const coop = {
+  active: false, role: null, started: false,
+  ally: null, allyName: '', allyRole: null, allyLabel: '',
+  lastIn: null, lastInAt: 0,
+  sendAcc: 0, inAcc: 0, lastSnapAt: 0,
+  result: null, toast: null
+};
+
+var coopAimOverride = null;
+var coopRoleOverride = null;
+
+function coopHasNet() { return typeof window !== 'undefined' && !!window.ZNet; }
+function coopFindLevel(id) { return coopLevels.find(l => l.id === id) || null; }
+function coopAllLevels() { return levels.concat(coopLevels); }
+function coopRoleDefFor(id) { return CHARACTERS[id] || CHARACTERS.luolin; }
+function coopPlayerName() {
+  const input = document.getElementById('coopName');
+  const typed = input && input.value ? String(input.value).trim().slice(0, 8) : '';
+  return typed || (playerProfile && playerProfile.name) || '玩家';
+}
+function coopEsc(text) {
+  return String(text == null ? '' : text).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// ---------- 队友实体：复用玩家的全部战斗逻辑 ----------
+function coopRebuildAllyKit(a) {
+  const def = coopRoleDefFor(a.roleId);
+  a.inventory = def.weapons.slice();
+  a.weapon = def.weapons[1] || def.weapons[0];
+  a.ammoByWeapon = { [a.weapon]: 9999 };
+  a.maxHp = Math.max(1, def.hp);
+  if (!(a.hp > 0)) a.hp = a.maxHp;
+  a.hp = Math.min(a.hp, a.maxHp);
+  a.lifesteal = def.lifesteal || 0;
+  a.skill1Def = SKILL_DEFS[def.ult] || null;
+  a.skill1Cd = 0;
+  a.skill1Active = 0;
+}
+
+function coopMakeAlly(name, role) {
+  const def = coopRoleDefFor(role || 'luolin');
+  const baseX = typeof player !== 'undefined' && player ? player.x : worldWidth * .5;
+  const baseY = typeof player !== 'undefined' && player ? player.y : 392;
+  const ally = {
+    kind: 'ally', name: name || '队友', roleId: role || 'luolin',
+    x: clamp(baseX - 76, 80, worldWidth - 80), y: baseY, r: 20,
+    hp: def.hp, maxHp: def.hp, speed: 236,
+    weapon: def.weapons[1], inventory: def.weapons.slice(), ammoByWeapon: {},
+    facing: 1, moving: false, aim: 0,
+    attackCd: 0, swing: 0, swingId: 0, swingHit: new Set(),
+    invuln: 1.2, anim: 0, hurtFlash: 0, flash: 0, recoil: 0, step: 0,
+    level: 1, xp: 0, xpNext: 1, pendingLevelUps: 0, talents: {},
+    dmgMul: 1, speedMul: 1, cdMul: 1, magnetMul: 1, eliteDmgMul: 1, executeMul: 1, luckMul: 1,
+    lifesteal: def.lifesteal || 0, thorns: 0, bloom: 0,
+    skill1Def: SKILL_DEFS[def.ult] || null, skill1Cd: 0, skill1Active: 0,
+    skill2Def: null, skill2Cd: 0, skill2Active: 0,
+    dead: false, reviveT: 0, knockX: 0, knockY: 0
+  };
+  coopRebuildAllyKit(ally);
+  return ally;
+}
+
+// 临时把全局 player / 角色切换成队友，用完还原（tryAttack 内部大量读取全局）
+function coopWithEntity(ent, fn) {
+  if (!ent) return fn();
+  const savedPlayer = player;
+  const savedRole = currentRoleId;
+  const savedAim = coopAimOverride;
+  player = ent;
+  currentRoleId = ent.roleId || currentRoleId;
+  coopAimOverride = Number.isFinite(ent.aim) ? ent.aim : null;
+  const bulletMark = Array.isArray(bullets) ? bullets.length : 0;
+  try {
+    fn();
+  } finally {
+    if (Array.isArray(bullets) && bullets.length > bulletMark) {
+      for (let i = bulletMark; i < bullets.length; i++) bullets[i].owner = ent;
+    }
+    player = savedPlayer;
+    currentRoleId = savedRole;
+    coopAimOverride = savedAim;
+  }
+}
+
+function coopTarget(z) {
+  if (!coop.active || !coop.ally || coop.ally.dead) return player;
+  const a = coop.ally;
+  if (!player) return a;
+  return dist2(a.x, a.y, z.x, z.y) < dist2(player.x, player.y, z.x, z.y) ? a : player;
+}
+
+function coopAllyDown(a) {
+  if (!a || a.dead) return;
+  a.dead = true;
+  a.reviveT = 6;
+  a.hp = 0;
+  coopToast(`${a.name || '队友'} 倒下了，6 秒后归队`);
+  if (coop.role === 'host') ZNet.send({ t: 'allyDown', name: a.name });
+}
+
+// ---------- 输入上报（guest）与快照广播（host） ----------
+function coopSendInput() {
+  if (!player || !coopHasNet()) return;
+  let mx = (keys['ArrowRight'] || keys['KeyD'] ? 1 : 0) - (keys['ArrowLeft'] || keys['KeyA'] ? 1 : 0);
+  let my = (keys['ArrowDown'] || keys['KeyS'] ? 1 : 0) - (keys['ArrowUp'] || keys['KeyW'] ? 1 : 0);
+  if (stick.active) { mx = stick.x; my = stick.y; }
+  const aim = currentAim();
+  ZNet.send({
+    t: 'in',
+    mx: Math.round(clamp(mx, -1, 1) * 100) / 100,
+    my: Math.round(clamp(my, -1, 1) * 100) / 100,
+    aim: Math.round(aim * 1000) / 1000,
+    fire: (input.attack || touchFire.active) ? 1 : 0,
+    w: player.weapon,
+    role: roleId()
+  });
+}
+
+function coopPackPlayer(p) {
+  if (!p) return null;
+  const ammo = weaponAmmo(p.weapon);
+  return [
+    Math.round(p.x), Math.round(p.y), Math.round(p.hp), Math.round(p.maxHp),
+    p.facing >= 0 ? 1 : -1, Math.round((p.anim || 0) * 100) / 100, p.roleId || currentRoleId,
+    p.weapon,
+    Math.round((p.swing || 0) * 100),
+    Math.round((p.hurtFlash || 0) * 100),
+    p.moving ? 1 : 0,
+    Math.round((p.skill1Active || 0) * 10),
+    Math.round((p.skill1Cd || 0) * 10),
+    Math.round((p.invuln || 0) * 100),
+    p.dead ? 1 : 0,
+    Number.isFinite(ammo) ? Math.round(ammo) : -1,
+    Math.round((p.flash || 0) * 100),
+    Math.round((p.recoil || 0) * 100)
+  ];
+}
+
+function coopUnpackPlayer(p, arr) {
+  if (!p || !arr) return p;
+  p.x = arr[0];
+  p.y = arr[1];
+  p.hp = arr[2];
+  p.maxHp = arr[3] || p.maxHp;
+  p.facing = arr[4] || 1;
+  p.anim = arr[5] || 0;
+  if (arr[6] && arr[6] !== p.roleId && CHARACTERS[arr[6]]) {
+    p.roleId = arr[6];
+    coopRebuildAllyKit(p);
+  }
+  if (arr[7] && Array.isArray(p.inventory) && p.inventory.includes(arr[7])) p.weapon = arr[7];
+  p.swing = (arr[8] || 0) / 100;
+  p.hurtFlash = (arr[9] || 0) / 100;
+  p.moving = !!arr[10];
+  p.skill1Active = (arr[11] || 0) / 10;
+  p.skill1Cd = (arr[12] || 0) / 10;
+  p.invuln = (arr[13] || 0) / 100;
+  p.dead = !!arr[14];
+  if (arr[15] >= 0) p.ammoByWeapon[p.weapon] = arr[15];
+  p.flash = (arr[16] || 0) / 100;
+  p.recoil = (arr[17] || 0) / 100;
+  return p;
+}
+
+function coopSendSnapshot() {
+  if (!coopHasNet() || coop.role !== 'host') return;
+  const data = {
+    t: 's', w: wave, k: kills, sc: score,
+    p: coopPackPlayer(player),
+    a: coop.ally && !coop.ally.dead ? coopPackPlayer(coop.ally) : null,
+    en: enemies.map(z => [
+      z.type, z.elite ? 1 : 0, Math.round(z.x), Math.round(z.y),
+      Math.round(z.hp), Math.round(z.maxHp), z.facing >= 0 ? 1 : -1,
+      Math.round((z.hurt || 0) * 100) / 100, Math.round((z.phase || 0) * 100) / 100,
+      Math.round((z.scale || 1) * 100) / 100, Math.round((z.r || 20) * 10) / 10,
+      z.boss ? 1 : 0, z.ranged ? 1 : 0, z.flying ? 1 : 0
+    ]),
+    bu: bullets.map(b => [
+      Math.round(b.x), Math.round(b.y), Math.round(b.px), Math.round(b.py),
+      Math.round(b.vx), Math.round(b.vy), Math.round((b.life || 0) * 100) / 100,
+      b.color || '#ffd166', b.kind === 'blade' ? 1 : 0, b.enemy ? 1 : 0,
+      Math.round(b.dmg || 0), Math.round(b.knock || 0)
+    ]),
+    pk: pickups.map(p => [p.kind, Math.round(p.x), Math.round(p.y), Math.round((p.bob || 0) * 100) / 100, Math.round((p.life || 0) * 10) / 10, p.val || 0]),
+    cr: crates.map(c => [Math.round(c.x), Math.round(c.y), Math.round(c.w), Math.round(c.h), Math.round(c.hp), Math.round(c.maxHp), Math.round((c.tilt || 0) * 100) / 100, Math.round((c.hit || 0) * 100) / 100]),
+    boss: bossRef ? [Math.round(bossRef.hp), Math.round(bossRef.maxHp), bossRef.type] : null
+  };
+  ZNet.send(data);
+}
+
+function coopUnpackZombie(arr) {
+  const def = ENEMY_DEFS[arr[0]] || ENEMY_DEFS.walker;
+  return {
+    type: arr[0], base: def.base, name: def.name, pal: def.pal,
+    x: arr[2], y: arr[3], hp: arr[4], maxHp: arr[5] || def.hp,
+    facing: arr[6] || 1, hurt: arr[7] || 0, phase: arr[8] || 0,
+    scale: arr[9] || def.scale, r: arr[10] || def.r,
+    boss: !!arr[11], ranged: !!arr[12], flying: !!arr[13], elite: !!arr[1],
+    dead: false, attackCd: 0, kx: 0, ky: 0, shotTimer: 1, climbT: 0,
+    speed: def.speed, dmg: def.dmg, score: def.score
+  };
+}
+
+function coopUnpackBullet(arr) {
+  return {
+    x: arr[0], y: arr[1], px: arr[2], py: arr[3], vx: arr[4], vy: arr[5],
+    life: arr[6], color: arr[7], kind: arr[8] ? 'blade' : 'bullet',
+    enemy: !!arr[9], dmg: arr[10], knock: arr[11]
+  };
+}
+
+function coopUnpackPickup(arr) {
+  return { kind: arr[0], x: arr[1], y: arr[2], bob: arr[3], life: arr[4], val: arr[5] };
+}
+
+function coopUnpackCrate(arr) {
+  return { x: arr[0], y: arr[1], w: arr[2], h: arr[3], hp: arr[4], maxHp: arr[5], tilt: arr[6], hit: arr[7] };
+}
+
+function coopApplySnapshot(s) {
+  if (!player) return;
+  coop.lastSnapAt = performance.now();
+  wave = s.w | 0;
+  kills = s.k | 0;
+  score = s.sc | 0;
+  if (s.p) {
+    if (!coop.ally) coop.ally = coopMakeAlly(coop.allyName || '队友', s.p[6] || 'luolin');
+    coopUnpackPlayer(coop.ally, s.p);
+  }
+  if (s.a) coopUnpackPlayer(player, s.a);
+  enemies = Array.isArray(s.en) ? s.en.map(coopUnpackZombie) : [];
+  bullets = Array.isArray(s.bu) ? s.bu.map(coopUnpackBullet) : [];
+  pickups = Array.isArray(s.pk) ? s.pk.map(coopUnpackPickup) : [];
+  crates = Array.isArray(s.cr) ? s.cr.map(coopUnpackCrate) : [];
+  bossRef = enemies.find(z => z.boss) || null;
+  if (bossRef) {
+    ui.bossHud.classList.remove('hidden');
+    if (ui.bossNameEl) ui.bossNameEl.textContent = 'BOSS · ' + (bossRef.name || '');
+    ui.bossFill.style.width = `${clamp(bossRef.hp / bossRef.maxHp * 100, 0, 100)}%`;
+  } else {
+    ui.bossHud.classList.add('hidden');
+  }
+  updateHud();
+}
+
+// ---------- 帧更新 ----------
+function updateCoopHost(dt) {
+  const a = coop.ally;
+  if (!a) return;
+  a.attackCd = Math.max(0, a.attackCd - dt);
+  a.swing = Math.max(0, a.swing - dt);
+  a.invuln = Math.max(0, a.invuln - dt);
+  a.hurtFlash = Math.max(0, a.hurtFlash - dt);
+  a.flash = Math.max(0, a.flash - dt);
+  a.recoil = Math.max(0, a.recoil - dt * 4);
+  const inp = coop.lastIn;
+  if (inp && !a.dead) {
+    let mx = clamp(Number(inp.mx) || 0, -1, 1);
+    let my = clamp(Number(inp.my) || 0, -1, 1);
+    const len = Math.hypot(mx, my);
+    a.moving = len > .08;
+    if (a.moving) {
+      a.x = clamp(a.x + (mx / len) * a.speed * dt, 80, worldWidth - 80);
+      a.y = clamp(a.y + (my / len) * a.speed * dt, laneTop, laneBottom);
+      a.anim += dt * 10;
+    }
+    if (Number.isFinite(inp.aim)) a.aim = inp.aim;
+    if (inp.w && weapons[inp.w] && a.inventory.includes(inp.w)) a.weapon = inp.w;
+    a.facing = Math.cos(a.aim) >= 0 ? 1 : -1;
+    if (a.moving && !inp.fire) a.facing = mx >= 0 ? 1 : -1;
+    if (inp.role && inp.role !== a.roleId && CHARACTERS[inp.role]) {
+      a.roleId = inp.role;
+      coopRebuildAllyKit(a);
+    }
+    if (inp.fire) coopWithEntity(a, () => tryAttack());
+  }
+  if (a.knockX || a.knockY) {
+    a.x = clamp(a.x + a.knockX * dt, 80, worldWidth - 80);
+    a.y = clamp(a.y + a.knockY * dt, laneTop, laneBottom);
+    a.knockX = lerp(a.knockX, 0, clamp(dt * 8, 0, 1));
+    a.knockY = lerp(a.knockY, 0, clamp(dt * 8, 0, 1));
+    if (Math.abs(a.knockX) < 4 && Math.abs(a.knockY) < 4) { a.knockX = 0; a.knockY = 0; }
+  }
+  if (a.dead) {
+    a.reviveT -= dt;
+    if (a.reviveT <= 0) {
+      a.dead = false;
+      a.hp = Math.max(1, Math.round(a.maxHp * .5));
+      a.x = clamp(player.x - 60, 80, worldWidth - 80);
+      a.y = player.y;
+      a.invuln = 1.6;
+      coopToast(`${a.name || '队友'} 已归队`);
+    }
+  }
+  coop.sendAcc += dt;
+  if (coop.sendAcc >= 1 / 15) {
+    coop.sendAcc = 0;
+    coopSendSnapshot();
+  }
+}
+
+function updateCoopGuest(dt) {
+  if (!player) return;
+  const now = performance.now();
+  if (coop.lastSnapAt && now - coop.lastSnapAt > 4500) {
+    coopAbort('与房主的连接已中断');
+    return;
+  }
+  player.swing = Math.max(0, player.swing - dt);
+  player.hurtFlash = Math.max(0, player.hurtFlash - dt);
+  player.invuln = Math.max(0, player.invuln - dt);
+  player.flash = Math.max(0, player.flash - dt);
+  player.recoil = Math.max(0, player.recoil - dt * 4);
+  player.attackCd = Math.max(0, player.attackCd - dt);
+  if (coop.ally) {
+    coop.ally.swing = Math.max(0, coop.ally.swing - dt);
+    coop.ally.hurtFlash = Math.max(0, coop.ally.hurtFlash - dt);
+    coop.ally.invuln = Math.max(0, coop.ally.invuln - dt);
+    coop.ally.anim += dt * 2;
+  }
+  if (waveBannerAt > 0) {
+    waveBannerAt -= dt;
+    if (waveBannerAt <= 0) ui.banner.classList.add('hidden');
+  }
+  cam.x = lerp(cam.x, clamp(player.x - W * .5, 0, worldWidth - W), clamp(dt * 6, 0, 1));
+  cam.y = lerp(cam.y, cameraYTarget(), clamp(dt * 4, 0, 1));
+  coop.inAcc += dt;
+  if (coop.inAcc >= .05) {
+    coop.inAcc = 0;
+    coopSendInput();
+  }
+}
+
+// ---------- 绘制 ----------
+function drawCoopAlly() {
+  if (!coop.active || !coop.ally) return;
+  const a = coop.ally;
+  if (a.dead) {
+    ctx.save();
+    ctx.globalAlpha = .45;
+    ctx.fillStyle = '#ff6b7a';
+    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('倒地', a.x, a.y - 26);
+    ctx.restore();
+    return;
+  }
+  coopWithEntity(a, () => drawPlayer());
+  ctx.save();
+  ctx.font = '600 11px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  const label = a.name || '队友';
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(8,10,16,.6)';
+  if (typeof rr === 'function') rr(ctx, a.x - tw / 2 - 7, a.y - 152, tw + 14, 16, 7);
+  else ctx.fillRect(a.x - tw / 2 - 7, a.y - 152, tw + 14, 16);
+  ctx.fill();
+  ctx.fillStyle = '#9fe0ff';
+  ctx.fillText(label, a.x, a.y - 140);
+  const pct = clamp(a.hp / a.maxHp, 0, 1);
+  ctx.fillStyle = 'rgba(0,0,0,.6)';
+  ctx.fillRect(a.x - 23, a.y - 132, 46, 4);
+  ctx.fillStyle = pct > .5 ? '#6bd97a' : pct > .25 ? '#ffc95c' : '#ff5b6e';
+  ctx.fillRect(a.x - 23, a.y - 132, 46 * pct, 4);
+  ctx.restore();
+}
+
+function coopToast(message) {
+  coop.toast = { msg: message, t: 2.4 };
+}
+
+function drawCoopOverlay() {
+  if (!coop.active) return;
+  ctx.save();
+  ctx.globalAlpha = .82;
+  const code = (coopHasNet() && ZNet.code) ? ZNet.code : '';
+  const text = code ? `联机 · ${code}` : '联机中';
+  ctx.font = '600 11px system-ui, -apple-system, sans-serif';
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = 'rgba(8,10,16,.55)';
+  if (typeof rr === 'function') rr(ctx, W / 2 - tw / 2 - 12, 10, tw + 24, 20, 10);
+  else ctx.fillRect(W / 2 - tw / 2 - 12, 10, tw + 24, 20);
+  ctx.fill();
+  ctx.fillStyle = coop.role === 'host' ? '#ffd166' : '#9fe0ff';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, W / 2, 24);
+  if (coop.toast && coop.toast.t > 0) {
+    ctx.globalAlpha = clamp(coop.toast.t, 0, 1);
+    ctx.font = '700 14px system-ui, -apple-system, sans-serif';
+    const mt = coop.toast.msg || '';
+    const mw = ctx.measureText(mt).width;
+    ctx.fillStyle = 'rgba(10,8,12,.72)';
+    if (typeof rr === 'function') rr(ctx, W / 2 - mw / 2 - 16, 74, mw + 32, 30, 8);
+    else ctx.fillRect(W / 2 - mw / 2 - 16, 74, mw + 32, 30);
+    ctx.fill();
+    ctx.fillStyle = '#ffe6a8';
+    ctx.fillText(mt, W / 2, 94);
+  }
+  ctx.restore();
+}
+
+// ---------- 结算 ----------
+function coopFillClearPanel(rewardText) {
+  const hpPct = player && player.maxHp ? clamp(Math.round(player.hp / player.maxHp * 100), 0, 100) : 0;
+  ui.clearHpRing.style.setProperty('--hp', String(hpPct));
+  ui.levelHp.textContent = `${hpPct}%`;
+  ui.clearLevelName.textContent = currentLevel ? currentLevel.name : '联机关卡';
+  ui.levelClearTitle.textContent = '联机通关';
+  ui.levelComplete.classList.toggle('perfect', false);
+  Array.from(ui.levelStars.children).forEach((star, index) => {
+    star.classList.toggle('active', true);
+    star.style.animationDelay = `${180 + index * 160}ms`;
+  });
+  ui.levelScore.textContent = score;
+  ui.levelWaves.textContent = Math.max(1, wave);
+  ui.levelKills.textContent = kills;
+  if (ui.clearRewards) ui.clearRewards.textContent = rewardText;
+  if (ui.nextLevelBtn) ui.nextLevelBtn.classList.add('hidden');
+}
+
+function coopFinishGame(win, fromNet) {
+  if (coop.result) return;
+  coop.result = { win: !!win };
+  if (!fromNet && coopHasNet()) ZNet.send({ t: 'over', win: !!win });
+  state = win ? 'levelcomplete' : 'dead';
+  setIngame(false);
+  music.stop(.5);
+  if (win) {
+    audio.bossDown();
+    const gold = 80 + (currentLevel ? currentLevel.totalWaves : 5) * 30 + kills * 3;
+    const diamonds = 5;
+    playerProfile.gold += gold;
+    playerProfile.diamonds += diamonds;
+    saveProfile();
+    updateLobbyStats();
+    coopFillClearPanel(`联机通关奖励  +${gold} 金币 · +${diamonds} 钻石`);
+    setTimeout(() => {
+      ui.hud.classList.add('hidden');
+      ui.levelComplete.classList.remove('hidden');
+    }, 520);
+  } else {
+    commitBest();
+    audio.gameover();
+    ui.finalScore.textContent = score;
+    ui.finalWave.textContent = Math.max(1, wave);
+    ui.finalKills.textContent = kills;
+    setTimeout(() => {
+      ui.hud.classList.add('hidden');
+      ui.dead.classList.remove('hidden');
+    }, 520);
+  }
+  updateHud();
+}
+
+function coopAbort(message) {
+  coopToast(message || '联机已断开');
+  const wasActive = coop.active;
+  coopResetSession();
+  try { if (coopHasNet()) ZNet.leave(); } catch (err) { /* 忽略 */ }
+  coopShowRoom(false);
+  if (wasActive) {
+    state = 'menu';
+    enterLobby();
+  }
+  if (message) coopSetStatus(message, 'warn');
+}
+
+function coopRestart() {
+  if (!coop.active) return;
+  if (coop.role !== 'host') return;
+  coop.result = null;
+  const level = coopFindLevel(currentLevel && currentLevel.id) || coopLevels[0];
+  coopSendStart(level);
+  coopStartLevel(level);
+}
+
+// ---------- 会话控制 ----------
+function coopResetSession() {
+  coop.active = false;
+  coop.role = null;
+  coop.started = false;
+  coop.ally = null;
+  coop.lastIn = null;
+  coop.lastSnapAt = 0;
+  coop.sendAcc = 0;
+  coop.inAcc = 0;
+  coop.result = null;
+  coop.toast = null;
+}
+
+function coopSendStart(level) {
+  if (!coopHasNet()) return;
+  ZNet.send({ t: 'start', id: level.id, name: coopPlayerName(), role: roleId() });
+}
+
+function coopStartLevel(level) {
+  if (!level) return;
+  ui.waitOverlay && ui.waitOverlay.classList.add('hidden');
+  currentLevel = level;
+  resetGame(level);
+  ui.menu.classList.add('hidden');
+  ui.levelSelect.classList.add('hidden');
+  ui.levelComplete.classList.add('hidden');
+  ui.dead.classList.add('hidden');
+  ui.hud.classList.remove('hidden');
+}
+
+function coopBeginLevelOnGuest(data) {
+  const level = coopFindLevel(data && data.id);
+  if (!level) return;
+  coop.active = true;
+  coop.role = 'guest';
+  coop.started = true;
+  coop.allyName = String((data && data.name) || '队友').slice(0, 8);
+  coop.allyRole = (data && data.role) || 'luolin';
+  coop.result = null;
+  coop.lastSnapAt = performance.now();
+  coop.ally = null;
+  coopStartLevel(level);
+  coop.toast = { msg: '联机开始 · 跟上队友', t: 2.2 };
+  coopSetStatus('已进入战场', 'ok');
+  hideNetWait();
+  if (coopHasNet()) ZNet.send({ t: 'hello', name: coopPlayerName(), role: roleId() });
+}
+
+// ---------- 网络消息 ----------
+function coopHandleMessage(data) {
+  if (!data || typeof data !== 'object') return;
+  switch (data.t) {
+    case 'in':
+      if (coop.role !== 'host' || !coop.active) return;
+      coop.lastIn = data;
+      if (data.role && CHARACTERS[data.role] && data.role !== coop.allyRole) {
+        coop.allyRole = data.role;
+        if (coop.ally) { coop.ally.roleId = data.role; coopRebuildAllyKit(coop.ally); }
+      }
+      return;
+    case 'hello':
+      coop.guestName = String(data.name || '').slice(0, 8);
+      coop.allyName = coop.guestName;
+      if (coop.ally) coop.ally.name = coop.guestName || '队友';
+      if (data.role && CHARACTERS[data.role]) {
+        coop.allyRole = data.role;
+        if (coop.ally) { coop.ally.roleId = data.role; coopRebuildAllyKit(coop.ally); }
+      }
+      coopRefreshPeers();
+      return;
+    case 'start':
+      if (coop.role === 'guest') coopBeginLevelOnGuest(data);
+      return;
+    case 's':
+      if (coop.role === 'guest') coopApplySnapshot(data);
+      return;
+    case 'over':
+      if (data.left) {
+        coopAbort('房主结束了联机');
+        return;
+      }
+      if (coop.role === 'guest') coopFinishGame(!!data.win, true);
+      return;
+    case 'allyDown':
+      if (coop.role === 'guest' && data.name) coopToast(`${data.name} 倒下了`);
+      return;
+    default:
+      return;
+  }
+}
+
+// ---------- UI ----------
+let coopUI = null;
+function coopEls() {
+  if (coopUI) return coopUI;
+  const byId = id => document.getElementById(id);
+  coopUI = {
+    view: byId('coopView'), status: byId('coopStatus'), setup: byId('coopSetup'),
+    name: byId('coopName'), create: byId('coopCreateBtn'), code: byId('coopCode'),
+    join: byId('coopJoinBtn'), room: byId('coopRoom'), roomCode: byId('coopRoomCode'),
+    copy: byId('coopCopyBtn'), peers: byId('coopPeers'), level: byId('coopLevelSelect'),
+    start: byId('coopStartBtn'), leave: byId('coopLeaveBtn'), hint: byId('coopHint'),
+    server: byId('coopServer'), apply: byId('coopApplyServer'), local: byId('coopLocalBtn'),
+    wait: byId('netWait'), waitText: byId('netWaitText'), waitLeave: byId('netWaitLeave')
+  };
+  return coopUI;
+}
+
+function coopSetStatus(text, tone) {
+  const el = coopEls().status;
+  if (!el) return;
+  el.textContent = text || '';
+  el.dataset.tone = tone || 'info';
+}
+
+function coopShowRoom(show) {
+  const els = coopEls();
+  if (els.setup) els.setup.classList.toggle('hidden', !!show);
+  if (els.room) els.room.classList.toggle('hidden', !show);
+  if (els.hint) els.hint.classList.toggle('hidden', !show);
+}
+
+function coopRefreshPeers() {
+  const els = coopEls();
+  if (!els.peers || !coopHasNet()) return;
+  const list = ZNet.peers || [];
+  const isHost = ZNet.role === 'host';
+  els.peers.innerHTML = list.length
+    ? list.map(p => `<span class="coop-peer${p.host ? ' host' : ''}"><i></i>${coopEsc(p.name || '玩家')}${p.host ? '<em>房主</em>' : ''}</span>`).join('')
+    : '<span class="coop-peer muted">等待队友加入…</span>';
+  if (els.start) {
+    els.start.classList.toggle('hidden', !isHost);
+    els.start.disabled = list.length < 2;
+    els.start.textContent = list.length >= 2 ? '开始联机' : '等待队友…';
+  }
+  if (els.leave) els.leave.classList.toggle('hidden', !ZNet.role);
+  if (els.roomCode) els.roomCode.textContent = ZNet.code || '-----';
+  if (ZNet.role) coopShowRoom(true);
+}
+
+function showNetWait(text) {
+  const els = coopEls();
+  if (!els.wait) return;
+  if (els.waitText) els.waitText.textContent = text || '正在连接…';
+  els.wait.classList.remove('hidden');
+}
+function hideNetWait() {
+  const els = coopEls();
+  if (els.wait) els.wait.classList.add('hidden');
+}
+
+async function coopCreateRoom() {
+  if (!coopHasNet()) { coopSetStatus('联机脚本未加载，请刷新页面', 'error'); return; }
+  try {
+    showNetWait('正在创建房间…');
+    const code = await ZNet.createRoom(coopPlayerName());
+    hideNetWait();
+    coopShowRoom(true);
+    coopSetStatus(`房间已创建 · ${code}，把房间码发给队友`, 'ok');
+    coopRefreshPeers();
+  } catch (err) {
+    hideNetWait();
+    coopSetStatus(String((err && err.message) || err || '创建房间失败'), 'error');
+  }
+}
+
+async function coopJoinRoom() {
+  if (!coopHasNet()) { coopSetStatus('联机脚本未加载，请刷新页面', 'error'); return; }
+  const els = coopEls();
+  const code = String((els.code && els.code.value) || '').trim().toUpperCase();
+  if (code.length < 5) { coopSetStatus('请输入 5 位房间码', 'warn'); return; }
+  try {
+    showNetWait('正在加入房间…');
+    await ZNet.joinRoom(code, coopPlayerName());
+    hideNetWait();
+    coop.role = 'guest';
+    coop.active = true;
+    coop.started = false;
+    coop.result = null;
+    coopShowRoom(true);
+    coopSetStatus('已加入房间，等待房主开始', 'ok');
+    coopRefreshPeers();
+    ZNet.send({ t: 'hello', name: coopPlayerName(), role: roleId() });
+  } catch (err) {
+    hideNetWait();
+    coopSetStatus(String((err && err.message) || err || '加入房间失败'), 'error');
+  }
+}
+
+function coopHostStart() {
+  if (!coopHasNet()) return;
+  if (!ZNet.roomReady()) { coopSetStatus('至少需要 2 人才能开始联机', 'warn'); return; }
+  const els = coopEls();
+  const level = coopFindLevel(Number(els.level && els.level.value)) || coopLevels[0];
+  coop.active = true;
+  coop.role = 'host';
+  coop.started = true;
+  coop.result = null;
+  coop.lastIn = null;
+  coop.guestName = ((ZNet.peers || []).find(p => !p.host) || {}).name || '队友';
+  coop.allyName = coop.guestName;
+  coopStartLevel(level);
+  coopSendStart(level);
+  coopSetStatus('联机进行中', 'ok');
+}
+
+function coopLeaveRoom() {
+  const wasActive = coop.active;
+  coopResetSession();
+  if (coopHasNet()) {
+    ZNet.send({ t: 'over', win: false, left: true });
+    try { ZNet.leave(); } catch (err) { /* 忽略 */ }
+  }
+  coopShowRoom(false);
+  coopSetStatus('已离开房间', 'info');
+  hideNetWait();
+  if (wasActive) enterLobby();
+}
+
+function initCoopUi() {
+  const els = coopEls();
+  if (!els.view) return;
+  if (!coopHasNet()) {
+    coopSetStatus('联机脚本 net.js 未加载', 'error');
+    [els.create, els.join, els.start, els.local].forEach(btn => { if (btn) btn.disabled = true; });
+    return;
+  }
+  if (els.name) els.name.value = (playerProfile && playerProfile.name) || '';
+  if (els.level) {
+    els.level.innerHTML = coopLevels.map(l => `<option value="${l.id}">${coopEsc(l.name)} · ${l.totalWaves} 波</option>`).join('');
+  }
+  if (els.server) {
+    let saved = '';
+    try { saved = localStorage.getItem('zombie-net-url') || ''; } catch (err) { /* 忽略 */ }
+    els.server.value = saved;
+  }
+  els.create && els.create.addEventListener('click', coopCreateRoom);
+  els.join && els.join.addEventListener('click', coopJoinRoom);
+  els.start && els.start.addEventListener('click', coopHostStart);
+  els.leave && els.leave.addEventListener('click', coopLeaveRoom);
+  els.waitLeave && els.waitLeave.addEventListener('click', coopLeaveRoom);
+  els.local && els.local.addEventListener('click', () => {
+    ZNet.useLocal();
+    coopSetStatus('已切换同机联机（同一浏览器多标签）', 'ok');
+    coopCreateRoom();
+  });
+  els.copy && els.copy.addEventListener('click', async () => {
+    const code = (coopHasNet() && ZNet.code) || '';
+    try {
+      await navigator.clipboard.writeText(code);
+      coopSetStatus(`房间码 ${code} 已复制`, 'ok');
+    } catch (err) {
+      coopSetStatus(`房间码：${code}`, 'info');
+    }
+  });
+  els.apply && els.apply.addEventListener('click', () => {
+    const url = String((els.server && els.server.value) || '').trim();
+    try { localStorage.setItem('zombie-net-url', url); } catch (err) { /* 忽略 */ }
+    coopSetStatus(url ? `服务器地址已保存：${url}` : '已恢复为当前站点', 'ok');
+    if (coopHasNet()) { try { ZNet.leave(); } catch (err) { /* 忽略 */ } }
+  });
+  if (els.code) {
+    els.code.addEventListener('input', () => { els.code.value = els.code.value.toUpperCase().slice(0, 5); });
+    els.code.addEventListener('keydown', ev => { if (ev.key === 'Enter') coopJoinRoom(); });
+  }
+
+  ZNet.on('status', ({ text, tone }) => coopSetStatus(text, tone));
+  ZNet.on('peers', list => {
+    coopRefreshPeers();
+    if (ZNet.role === 'host') {
+      const guest = (list || []).find(p => !p.host);
+      if (guest && guest.name) { coop.guestName = guest.name; coop.allyName = guest.name; }
+    }
+    if (ZNet.role === 'guest') ZNet.send({ t: 'hello', name: coopPlayerName(), role: roleId() });
+  });
+  ZNet.on('presence', ev => {
+    if (!ev) return;
+    if (ev.ev === 'join') coopToast(`${ev.name || '队友'} 加入了房间`);
+    if (ev.ev === 'leave') {
+      coopToast(`${ev.name || '队友'} 离开了房间`);
+      if (coop.active && coop.role === 'host') {
+        coop.ally = null;
+        coop.lastIn = null;
+        coopToast('队友已离开，单人继续');
+      }
+    }
+  });
+  ZNet.on('message', coopHandleMessage);
+  ZNet.on('closed', ev => {
+    if (coop.active) { coopAbort('联机已断开'); return; }
+    coopSetStatus('房间已关闭', 'warn');
+    coopShowRoom(false);
+    coopResetSession();
+    hideNetWait();
+  });
+  ZNet.on('error', ev => coopSetStatus('联机错误：' + ((ev && ev.code) || 'unknown'), 'error'));
+  ZNet.on('ready', () => { coopShowRoom(true); coopRefreshPeers(); });
+}
+
 
 const playerProfile = (() => {
   const base = { name: '玩家', level: 1, diamonds: 0, gold: 0 };
@@ -802,7 +1601,7 @@ const touchFire = { active: false, id: -1 };
 if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(max-width: 820px)').matches) document.body.classList.add('touch');
 
 function resetGame(config = currentLevel || levels[0]) {
-  levelConfig = levels.find(l => l.id === config.id) || levels[0];
+  levelConfig = levels.concat(coopLevels).find(l => l.id === config.id) || levels[0];
   currentLevel = levelConfig;
   const role = roleDef();
   player = {
@@ -825,6 +1624,8 @@ function resetGame(config = currentLevel || levels[0]) {
   player.dmgMul *= eqs.atkPct / 100;
   player.cdMul *= 100 / eqs.asPct;
   player.speed = Math.round(player.speed * critStats().move);
+  coop.result = null;
+  coop.ally = (coop.active && coop.role === 'host') ? coopMakeAlly(coop.allyName || coop.guestName || '队友', coop.allyRole || 'luolin') : null;
   enemies = [];
   bullets = [];
   pickups = [];
@@ -1066,6 +1867,17 @@ function startWave(n) {
       spawnQueue.push({ t, elite: isElite });
     }
   }
+  if (levelConfig.coop) {
+    const extra = coop.active && coop.ally ? 3 : 0;
+    const pool = (spec.smallPool && spec.smallPool.length) ? spec.smallPool : ['walker'];
+    for (let i = 0; i < extra; i++) {
+      spawnQueue.push({ t: pool[Math.floor(Math.random() * pool.length)], elite: Math.random() < .18 });
+    }
+    if (isLast) {
+      spawnQueue.push({ t: (spec.chapter && spec.chapter.boss) || 'tyrant', boss: true });
+      ui.bannerText.textContent = `最终波 · ${bossName} 来袭`;
+    }
+  }
   for (let i = spawnQueue.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [spawnQueue[i], spawnQueue[j]] = [spawnQueue[j], spawnQueue[i]];
@@ -1079,6 +1891,7 @@ function startWave(n) {
 
 function completeLevel() {
   if (state === 'levelcomplete') return;
+  if (coop.active) { coopFinishGame(true); return; }
   state = 'levelcomplete';
   const next = levels.find(l => l.id === currentLevel.id + 1);
   unlockedLevel = Math.max(unlockedLevel, next ? next.id : levels.length);
@@ -1145,6 +1958,13 @@ function completeLevel() {
 
 function enterLobby() {
   if (startLoadingTimer) { clearInterval(startLoadingTimer); startLoadingTimer = null; }
+  if (coop.active || coop.role) {
+    if (coop.role === 'host' && coopHasNet()) { try { ZNet.send({ t: 'over', win: false, left: true }); } catch (err) { /* 忽略 */ } }
+    coopResetSession();
+    if (coopHasNet()) { try { ZNet.leave(); } catch (err) { /* 忽略 */ } }
+    coopShowRoom(false);
+    hideNetWait();
+  }
   state = 'menu';
   setIngame(false);
   music.stop(.25);
@@ -1208,22 +2028,24 @@ function selectLevelBy(delta) {
   }
 }
 
-const lobbyViewIds = ['levelView', 'profileView', 'characterView', 'shopView', 'upgradeView', 'inventoryView', 'extrasView'];
+const lobbyViewIds = ['levelView', 'profileView', 'characterView', 'shopView', 'upgradeView', 'inventoryView', 'coopView'];
 let currentLobbyView = 'levelView';
 function showLobbyView(name, silent = false) {
   if (!lobbyViewIds.includes(name)) name = 'levelView';
   currentLobbyView = name;
   lobbyViewIds.forEach(viewId => {
-    if (ui[viewId]) ui[viewId].classList.toggle('hidden', viewId !== name);
+    const view = ui[viewId] || document.getElementById(viewId);
+    if (view) view.classList.toggle('hidden', viewId !== name);
   });
   document.querySelectorAll('.lobby-actions [data-lobby-view]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.lobbyView === name && btn.id !== 'extrasBtn');
+    btn.classList.toggle('active', btn.dataset.lobbyView === name);
   });
   if (name === 'levelListView') 
   if (name === 'profileView') syncSettingsUI();
   if (name === 'upgradeView') renderUpgradePanel();
   if (name === 'shopView') renderShop();
   if (name === 'characterView') renderCharacterPanel();
+  if (name === 'coopView') coopRefreshPeers();
   if (!silent && actx) audio.wave();
 }
 function startSelectedLevel() {
@@ -1238,7 +2060,7 @@ function startSelectedLevel() {
 function startLevel(level) {
   if (!level) return;
   if (state === 'playing' && level === currentLevel && player && player.roleId === roleId()) return;
-  if (level.id > unlockedLevel) {
+  if (!level.coop && level.id > unlockedLevel) {
     showComingSoon('该关卡尚未解锁');
     return;
   }
@@ -1653,6 +2475,7 @@ function update(dt) {
   globalTime += dt;
   shake = Math.max(0, shake - dt * 26);
   if (state !== 'playing') return;
+  if (coop.active && coop.role === 'guest') { updateCoopGuest(dt); return; }
 
   const moveX = (keys['ArrowRight'] || keys['KeyD'] ? 1 : 0) - (keys['ArrowLeft'] || keys['KeyA'] ? 1 : 0);
   const moveY = (keys['ArrowDown'] || keys['KeyS'] ? 1 : 0) - (keys['ArrowUp'] || keys['KeyW'] ? 1 : 0);
@@ -1692,6 +2515,8 @@ function update(dt) {
 
   cam.x = lerp(cam.x, clamp(player.x - W * .5, 0, worldWidth - W), clamp(dt * 5, 0, 1));
   cam.y = lerp(cam.y, cameraYTarget(), clamp(dt * 4, 0, 1));
+  if (coop.toast) coop.toast.t = Math.max(0, coop.toast.t - dt);
+  if (coop.active && coop.role === 'host') updateCoopHost(dt);
 
   if (nextWaveTimer > 0) {
     nextWaveTimer -= dt;
@@ -1758,10 +2583,24 @@ function updateBullets(dt) {
         updateHud();
         hit = true;
       }
+      if (!hit && coop.active && coop.ally && !coop.ally.dead && coop.ally.invuln <= 0) {
+        const a = coop.ally;
+        if (segmentCircle(b.px, b.py, b.x, b.y, a.x, a.y - 30, a.r + 8)) {
+          a.hp -= b.dmg * (1 - (coopRoleDefFor(a.roleId).dmgReduce || 0));
+          a.invuln = .62;
+          a.hurtFlash = .26;
+          a.knockX = Math.sign(b.vx) * Math.abs(b.knock || 90);
+          a.knockY = -70;
+          audio.hurt();
+          if (a.hp <= 0) coopAllyDown(a);
+          hit = true;
+        }
+      }
     } else {
       for (const c of crates) {
         if (segmentRect(b.px, b.py, b.x, b.y, c.x - c.w / 2, c.y - c.h * .75, c.w, c.h)) {
-          damageCrate(c, b.dmg * player.dmgMul);
+          if (b.owner && b.owner.kind === 'ally') coopWithEntity(b.owner, () => damageCrate(c, b.dmg * player.dmgMul));
+          else damageCrate(c, b.dmg * player.dmgMul);
           hit = true;
           break;
         }
@@ -1770,7 +2609,8 @@ function updateBullets(dt) {
         if (z.dead) continue;
         const hitR = z.r + 10;
         if (segmentCircle(b.px, b.py, b.x, b.y, z.x, z.y - z.r * .55, hitR)) {
-          dealDamage(z, b.dmg, Math.atan2(b.vy, b.vx), b.knock || weapons.gun.knock);
+          if (b.owner && b.owner.kind === 'ally') coopWithEntity(b.owner, () => dealDamage(z, b.dmg, Math.atan2(b.vy, b.vx), b.knock || weapons.gun.knock));
+          else dealDamage(z, b.dmg, Math.atan2(b.vy, b.vx), b.knock || weapons.gun.knock);
           hit = true;
           break;
         }
@@ -1798,8 +2638,9 @@ function updateEnemies(dt) {
     z.kx = lerp(z.kx, 0, clamp(dt * 6, 0, 1));
     z.ky = lerp(z.ky, 0, clamp(dt * 6, 0, 1));
 
-    const dx = player.x - z.x;
-    const dy = player.y - 4 - z.y;
+    const tgt = coopTarget(z);
+    const dx = tgt.x - z.x;
+    const dy = tgt.y - 4 - z.y;
     const d = Math.hypot(dx, dy) || 1;
     if (z.flying) {
       z.facing = dx >= 0 ? 1 : -1;
@@ -1815,7 +2656,7 @@ function updateEnemies(dt) {
       if (z.shotTimer <= 0 && Math.abs(dx) < 660) {
         z.shotTimer = z.boss ? rand(1.3, 2.1) : rand(1.25, 2.25);
         const ax = z.x, ay = z.y - 20;
-        const baseA = Math.atan2(player.y - 32 - ay, player.x - ax);
+        const baseA = Math.atan2(tgt.y - 32 - ay, tgt.x - ax);
         const sp = z.boss ? 520 : 560;
         // 飞行 BOSS 三连酸弹，普通飞行者单发
         const shots = z.boss ? [-.22, 0, .22] : [0];
@@ -1833,7 +2674,7 @@ function updateEnemies(dt) {
       if (z.shotTimer <= 0 && Math.abs(dx) < 720) {
         z.shotTimer = rand(1.7, 2.7);
         const ax = z.x, ay = z.y - z.r * .7;
-        const a = Math.atan2(player.y - 32 - ay, player.x - ax);
+        const a = Math.atan2(tgt.y - 32 - ay, tgt.x - ax);
         const sp = 460;
         for (const off of [-.14, .14]) {
           const aa = a + off;
@@ -1850,21 +2691,23 @@ function updateEnemies(dt) {
     z.x = clamp(z.x, 40, worldWidth - 40);
     z.x = clamp(z.x, cam.x - 260, cam.x + W + 260);
 
-    const touch = d < z.r + player.r - 2;
-    if (touch && z.attackCd <= 0 && player.invuln <= 0) {
+    const touch = d < z.r + tgt.r - 2;
+    if (touch && z.attackCd <= 0 && tgt.invuln <= 0) {
       z.attackCd = .78;
-      player.hp -= z.dmg * (1 - roleDef().dmgReduce);
-      player.invuln = .72;
-      player.hurtFlash = .28;
-      addShake(7);
-      vibrate(55);
-      player.knockX = -dx / d * 220;
-      player.knockY = -dy / d * 180;
+      const reduce = tgt === player ? roleDef().dmgReduce : (coopRoleDefFor(tgt.roleId).dmgReduce || 0);
+      tgt.hp -= z.dmg * (1 - reduce);
+      tgt.invuln = .72;
+      tgt.hurtFlash = .28;
+      tgt.knockX = -dx / d * 220;
+      tgt.knockY = -dy / d * 180;
+      if (tgt === player) { addShake(7); vibrate(55); }
       audio.hurt();
-      if (player.thorns > 0 && !z.dead) {
-        dealDamage(z, player.thorns, Math.atan2(z.y - player.y, z.x - player.x), 200);
+      if (tgt.thorns > 0 && !z.dead) {
+        if (tgt === player) dealDamage(z, tgt.thorns, Math.atan2(z.y - tgt.y, z.x - tgt.x), 200);
+        else coopWithEntity(tgt, () => dealDamage(z, tgt.thorns, Math.atan2(z.y - tgt.y, z.x - tgt.x), 200));
       }
       updateHud();
+      if (tgt !== player && tgt.hp <= 0) coopAllyDown(tgt);
     }
     if (player.knockX || player.knockY) {
       player.x = clamp(player.x + player.knockX * dt, 80, worldWidth - 80);
@@ -1959,6 +2802,7 @@ function updateParticles(dt) {
 
 function gameOver() {
   if (state === 'dead') return;
+  if (coop.active) { coopFinishGame(false); return; }
   state = 'dead';
   setIngame(false);
   dismissTouchHint();
@@ -2080,6 +2924,7 @@ function render() {
   for (const z of sorted) drawZombie(z);
   drawSpawnMarkers();
   drawBullets();
+  if (coop.active) drawCoopAlly();
   if (player) drawPlayer();
   drawParticles();
   drawLampsGlow();
@@ -2091,6 +2936,7 @@ function render() {
   drawVignette();
   drawSkillFx();
   drawAmbient();
+  if (coop.active) drawCoopOverlay();
   if (state === 'playing' && player) drawCrosshair();
 }
 
@@ -4678,7 +5524,7 @@ addEventListener('keydown', e => {
     if (name) selectWeapon(name, true);
   }
   if (e.code === 'KeyP') togglePause();
-  if (e.code === 'KeyR' && state === 'dead') resetGame();
+  if (e.code === 'KeyR' && state === 'dead') { if (coop.active) coopRestart(); else resetGame(); }
   if (e.code === 'KeyM') toggleMute();
   if (e.code === 'KeyB') toggleMusic();
   if (e.code === 'KeyK') useSkill(1);
@@ -4691,7 +5537,7 @@ addEventListener('keyup', e => {
 });
 
 document.getElementById('startBtn').addEventListener('click', beginStartGame);
-document.getElementById('restartBtn').addEventListener('click', () => resetGame(currentLevel));
+document.getElementById('restartBtn').addEventListener('click', () => { if (coop.active) { coopRestart(); return; } resetGame(currentLevel); });
 document.getElementById('resumeBtn').addEventListener('click', togglePause);
 document.getElementById('menuBtn').addEventListener('click', enterLobby);
 ui.settingsBtn.addEventListener('click', resetSettings);
@@ -4799,7 +5645,7 @@ document.getElementById('charImportBtn')?.addEventListener('click', () => {
     hint.textContent = '粘贴分享码后再次点击「导入分享码」';
   }
 });
-ui.restartLevelBtn.addEventListener('click', () => resetGame(currentLevel));
+ui.restartLevelBtn.addEventListener('click', () => { if (coop.active) { coopRestart(); return; } resetGame(currentLevel); });
 ui.levelLobbyBtn.addEventListener('click', enterLobby);
 ui.startLevelBtn.addEventListener('click', startSelectedLevel);
 ui.currentLevelCard.addEventListener('click', startSelectedLevel);
@@ -5141,6 +5987,7 @@ function showMenu() {
   ui.bossHud.classList.add('hidden');
 }
 
+initCoopUi();
 renderAvatarPresets();
 applyAvatar();
 

@@ -335,6 +335,69 @@ body.touch #skillBar{right:calc(24px + env(safe-area-inset-right, 0px));bottom:c
 .character-panel .gacha-hint{margin-top:10px;font-size:11px;color:var(--muted)}
 .character-panel .player-name-input{margin-top:10px}
 
+/* ================= 联机 ================= */
+.coop-panel{width:min(640px,95%);text-align:center}
+.coop-panel h1{color:#ff7a5c;margin:2px 0 6px;font-size:clamp(24px,3.4vw,34px);letter-spacing:.04em}
+.coop-panel .kicker{color:#ff9b7a}
+.coop-sub{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.6}
+.coop-status{border:1px solid var(--line);border-left:3px solid #ff7a5c;background:rgba(20,14,16,.9);padding:8px 12px;margin:0 auto 12px;max-width:460px;font-size:12px;font-weight:800;color:var(--text);text-align:left;transition:border-color .15s,color .15s}
+.coop-status[data-tone="ok"]{border-left-color:#5ad98a;color:#b8f5cd}
+.coop-status[data-tone="warn"]{border-left-color:#ffb648;color:#ffe0a8}
+.coop-status[data-tone="error"]{border-left-color:#ff5a5a;color:#ffc0c0}
+.coop-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 auto 12px;max-width:520px}
+.coop-card{border:1px solid var(--line);background:rgba(14,18,27,.85);padding:12px 12px 14px;display:flex;flex-direction:column;gap:8px;clip-path:var(--clip-cut-sm);text-align:center}
+.coop-card b{font-size:14px;color:var(--amber)}
+.coop-card p{margin:0;font-size:11px;color:var(--muted)}
+.coop-card .primary,.coop-card .ghost{margin:0;width:100%}
+.coop-input{width:100%;box-sizing:border-box;border:1px solid var(--line);background:#0e1219;color:#fff;font-weight:900;padding:8px 10px;text-align:center;font-size:13px;outline:none}
+.coop-input:focus{border-color:#ff7a5c}
+.coop-code-input{letter-spacing:.32em;text-transform:uppercase;font-size:17px;font-family:ui-monospace,monospace}
+.coop-room{max-width:520px;margin:0 auto}
+.coop-code-box{display:flex;align-items:center;justify-content:center;gap:10px;border:1px dashed #ff7a5c;background:rgba(255,122,92,.07);padding:8px 12px;margin-bottom:10px}
+.coop-code-box span{font-size:11px;color:var(--muted);font-weight:800}
+.coop-code-box strong{font-size:clamp(22px,3.2vw,28px);letter-spacing:.28em;color:#ffb499;font-family:ui-monospace,monospace;text-shadow:0 0 14px rgba(255,122,92,.5)}
+.coop-code-box .small{margin:0;padding:4px 10px;font-size:10px}
+.coop-peers{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px;min-height:34px}
+.coop-peer{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:rgba(18,23,33,.9);padding:5px 12px;font-size:12px;font-weight:800}
+.coop-peer i{width:8px;height:8px;border-radius:50%;background:#5ad98a;box-shadow:0 0 8px #5ad98a}
+.coop-peer.host{border-color:var(--amber-dim)}
+.coop-peer.host i{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.coop-peer em{font-style:normal;font-size:10px;color:var(--muted);font-weight:800}
+.coop-room-actions{display:flex;gap:8px;justify-content:center;align-items:stretch;flex-wrap:wrap}
+.coop-room-actions .primary,.coop-room-actions .ghost{margin:0;padding:10px 18px}
+.coop-select{border:1px solid var(--line);background:#0e1219;color:var(--text);font-weight:800;font-size:12px;padding:8px 10px;max-width:100%}
+.coop-advanced{margin:14px auto 0;max-width:520px;text-align:left;border-top:1px solid var(--line);padding-top:10px}
+.coop-advanced summary{cursor:pointer;font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.04em}
+.coop-advanced summary:hover{color:var(--amber)}
+.coop-field{display:grid;grid-template-columns:88px 1fr;align-items:center;gap:8px;margin:10px 0 8px;font-size:11px;font-weight:800;color:var(--muted)}
+.coop-advanced-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.coop-advanced-actions .small{margin:0}
+.coop-advanced code{background:rgba(255,255,255,.06);padding:1px 5px;font-size:10px;color:#ffb499}
+.net-wait-panel{max-width:380px}
+.net-wait-panel h1{color:var(--amber)}
+
+@media (orientation:landscape) and (max-height:620px), (max-width:920px){
+  .coop-panel{padding:10px 14px}
+  .coop-panel .kicker{display:none}
+  .coop-panel h1{font-size:21px;margin:0 0 4px}
+  .coop-sub{font-size:10px;margin-bottom:7px;line-height:1.45}
+  .coop-sub br{display:none}
+  .coop-status{padding:5px 9px;font-size:10px;margin-bottom:8px}
+  .coop-grid{gap:7px;margin-bottom:8px}
+  .coop-card{padding:8px;gap:5px}
+  .coop-card b{font-size:12px}
+  .coop-card p{font-size:9px}
+  .coop-input{padding:5px 8px;font-size:11px}
+  .coop-code-input{font-size:14px;padding:5px 8px}
+  .coop-code-box{padding:5px 10px;margin-bottom:7px}
+  .coop-code-box strong{font-size:19px}
+  .coop-peers{margin-bottom:6px;min-height:26px;gap:5px}
+  .coop-peer{padding:3px 9px;font-size:10px}
+  .coop-room-actions .primary,.coop-room-actions .ghost{padding:7px 13px;font-size:11px}
+  .coop-advanced{margin-top:8px;padding-top:6px}
+  .coop-field{grid-template-columns:70px 1fr;margin:7px 0 6px;font-size:10px}
+}
+
 @media (orientation:landscape) and (max-height:620px), (max-width:920px){
   .character-panel{padding:10px 14px}
   .char-stage{width:132px;height:132px;margin:2px auto 6px}
