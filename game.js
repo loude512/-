@@ -78,6 +78,7 @@ const ui = {
   finalWave: document.getElementById('finalWave'),
   finalKills: document.getElementById('finalKills'),
   stickKnob: document.getElementById('stickKnob'),
+  stickBase: document.getElementById('stickBase'),
   swapBtn: document.getElementById('swapBtn'),
   touchPauseBtn: document.getElementById('touchPauseBtn'),
   masterVolume: document.getElementById('masterVolume'),

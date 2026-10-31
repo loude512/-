@@ -67,6 +67,10 @@ npx netlify deploy --prod --dir .
 
 ### 启动联机服务器
 
+默认服务器已内置联机中继：`start.bat` / `npm start` 启动的 5173 端口服务器直接提供 `/ws`，创建房间、加入房间开箱即用，无需额外启动任何服务。
+
+如需独立联机服务器（例如把中继单独部署到公网），仍然可以：
+
 ```bash
 node server/relay.js
 ```
@@ -229,8 +233,9 @@ WebSocket: ws://<地址>:8787/ws
 | `style.css` | 响应式布局、桌面端与手机端 UI 样式 |
 | `game.js` | 游戏逻辑、渲染、音效、键鼠与触屏输入 |
 | `net.js` | 联机客户端（WebSocket / BroadcastChannel 双传输，`window.ZNet`） |
-| `server/relay.js` | 零依赖联机服务器：房间码、WebSocket 转发、心跳，兼静态托管 |
-| `server.js` | 零依赖静态服务器，支持本机与局域网访问 |
+| `server/relay-core.js` | 零依赖联机中继核心（房间码、WebSocket 转发、心跳），供下面两个服务器共用 |
+| `server/relay.js` | 独立联机服务器：静态托管 + `/ws` 中继（默认端口 8787） |
+| `server.js` | 一键服务器：静态托管 + 内置 `/ws` 联机中继，支持本机与局域网访问 |
 | `start.bat` | Windows 一键启动脚本 |
 | `package.json` | `npm start` 等快捷命令 |
 | `README.md` | 说明文档 |

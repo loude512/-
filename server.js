@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { attachRelay } = require('./server/relay-core');
 
 const root = __dirname;
 const portArg = process.argv.slice(2).find(arg => arg.startsWith('--port='));
@@ -64,6 +65,9 @@ const server = http.createServer((req, res) => {
   }
 });
 
+// 内置联机中继（/ws）：创建房间 / 加入房间 / 消息转发，手机可直接连
+attachRelay(server);
+
 server.on('error', err => {
   console.error(`服务器启动失败: ${err.message}`);
   if (err.code === 'EADDRINUSE') console.error(`端口 ${port} 已被占用，可改用: PORT=8080 node server.js`);
@@ -75,5 +79,6 @@ server.listen(port, host, () => {
   console.log(`本机网址:   http://127.0.0.1:${port}`);
   for (const url of lanUrls()) console.log(`局域网网址: ${url}`);
   console.log('手机和电脑在同一局域网时，输入上面的局域网网址即可游玩。');
+  console.log('联机：游戏内「联机」→「创建房间」，手机打开局域网网址「加入房间」即可（/ws 已内置）。');
   console.log('按 Ctrl + C 可停止服务器。');
 });
